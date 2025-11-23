@@ -2,8 +2,9 @@
 
 **A Local-First, Privacy-Preserving Architecture for Agentic RAG.**
 
-![HiveMind Architecture]([https://your-image-link-here.com](https://github.com/virtuehearts/HiveMind/blob/main/hivemind.jpg?raw=true)) 
-*(Upload your diagram to the repo and link it here)*
+![HiveMind Architecture](
+[https://your-image-link-here.com](https://github.com/virtuehearts/HiveMind/blob/main/hivemind.jpg?raw=true)
+
 
 ## 🧠 The Problem
 Current Enterprise RAG (Retrieval-Augmented Generation) architectures are flawed:
