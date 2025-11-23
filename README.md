@@ -49,7 +49,8 @@ my-dataset.emu/
 ```
 
 ### EMUs are:
-- 🟩 **Portable** — Share via Git, IPFS, email, S3, or attachments  
+- 🟩 **Portable** — Share via Git, IPFS, email, S3, or attachments
+- 🟩 **Sharable** — Share via hivemind / torrent protocol 
 - 🟩 **Hot-Swappable** — Mount/unmount instantly based on query intent  
 - 🟩 **Local-First** — Stored on disk, not a cloud DB  
 - 🟩 **Version-Controlled** — Branch, diff, roll back  
