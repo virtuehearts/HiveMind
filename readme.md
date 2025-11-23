@@ -2,8 +2,9 @@
 
 **A Local-First, Privacy-Preserving Architecture for Agentic RAG.**
 
-![HiveMind Architecture](
-[https://github.com/virtuehearts/HiveMind/blob/main/hivemind.jpg?raw=true]
+![HiveMind Architecture]
+![HiveMind Architecture](https://github.com/virtuehearts/HiveMind/blob/main/hivemind.jpg?raw=true)
+
 
 
 ## 🧠 The Problem
