@@ -3,8 +3,9 @@
 by **Virtue_hearts** (Darknet.ca Labs)
 
 ---
+![HiveMind Architecture](https://github.com/virtuehearts/HiveMind/blob/main/hivemind.jpg?raw=true)
 
-[HiveMind Architecture](https://github.com/virtuehearts/HiveMind/blob/main/hivemind.jpg?raw=true)
+
 
 ---
 
