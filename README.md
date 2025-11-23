@@ -4,7 +4,7 @@ by **Virtue_hearts** (Darknet.ca Labs)
 
 ---
 
-![HiveMind Architecture](/mnt/data/Gemini_Generated_Image_xlbi46xlbi46xlbi.png)
+[HiveMind Architecture](https://github.com/virtuehearts/HiveMind/blob/main/hivemind.jpg?raw=true)
 
 ---
 
