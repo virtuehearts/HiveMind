@@ -26,7 +26,8 @@ Instead of a monolithic Vector DB, memory is treated as a **portable artifact**.
 * **Version Controlled:** Memory can be versioned, branched, and rolled back like code.
 
 #### 2. The "Semantic Firewall" (Local Routing)
-Before any data hits a Cloud LLM (GPT5.1/Claude/Phi/Gemini 3.0), it passes through a local Small Language Model (SLM) gateway.
+Before any data hits a Cloud LLM (GPT5.1/Claude/Phi/Gemini 3.0), 
+it passes through a local Small Language Model (SLM) gateway.
 * **Router Node:** Uses **Qwen 2.5 (Local)** to classify intent.
 * **Grader Node:** Evaluates retrieval relevance locally.
 * **PII Scrubber:** Redacts sensitive entities on the edge.
