@@ -26,7 +26,7 @@ Instead of a monolithic Vector DB, memory is treated as a **portable artifact**.
 * **Version Controlled:** Memory can be versioned, branched, and rolled back like code.
 
 #### 2. The "Semantic Firewall" (Local Routing)
-Before any data hits a Cloud LLM (GPT-4/Claude), it passes through a local Small Language Model (SLM) gateway.
+Before any data hits a Cloud LLM (GPT5.1/Claude/Phi/Gemini 3.0), it passes through a local Small Language Model (SLM) gateway.
 * **Router Node:** Uses **Qwen 2.5 (Local)** to classify intent.
 * **Grader Node:** Evaluates retrieval relevance locally.
 * **PII Scrubber:** Redacts sensitive entities on the edge.
@@ -45,7 +45,8 @@ Before any data hits a Cloud LLM (GPT-4/Claude), it passes through a local Small
 * **Orchestration:** LangGraph
 * **Local Inference:** Ollama / vLLM
 * **Vector Store:** LanceDB (Serverless)
-* **Routing Model:** Qwen 2.5-7B-Instruct / Phi-3.5
+* **Routing Model:** Qwen 2.5 1.5B - 2B
+* **Optimized to run on consumer grade CPU / 6GB RTX GPU (with goal of 50TPS) 
 
 ## 🚀 Roadmap
 - [ ] Core EMU Interface (Python)
@@ -53,4 +54,4 @@ Before any data hits a Cloud LLM (GPT-4/Claude), it passes through a local Small
 - [ ] "Hot-Swap" Mounting Demo
 
 ---
-*Concept by Warren Kreklo (VirtueHearts).*
+*Concept by Virtue_hearts / admin@darknet.ca 
