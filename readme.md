@@ -1,58 +1,37 @@
-# 🐝 HiveMind Protocol
+🐝 HiveMind Protocol
+A Local-First, Privacy-Preserving Architecture for Agentic RAG
 
-**A Local-First, Privacy-Preserving Architecture for Agentic RAG.**
+[HiveMind Architecture](https://github.com/virtuehearts/HiveMind/blob/main/hivemind.jpg?raw=true)
 
-![HiveMind Architecture]
-![HiveMind Architecture](https://github.com/virtuehearts/HiveMind/blob/main/hivemind.jpg?raw=true)
+by Virtue_hearts (Darknet.ca Labs)
 
+⚡ Overview
 
+HiveMind is a local-first, edge-augmented RAG protocol that treats memory as portable, hot-swappable artifacts called EMUs (Encapsulated Memory Units) — instead of giant monolithic vector databases.
 
-## 🧠 The Problem
-Current Enterprise RAG (Retrieval-Augmented Generation) architectures are flawed:
-1.  **Privacy Risks:** Sending full context windows to cloud providers leaks PII.
-2.  **Latency:** Round-tripping irrelevant data to the cloud is slow.
-3.  **Cost:** Token usage on "noise" (irrelevant documents) drains budgets.
-4.  **The Monolith:** Vector Databases are treated as massive, static silos.
+It is designed to run on:
+✅ Consumer CPUs (16GB RAM)
+✅ NVIDIA RTX GPUs (6GB VRAM)
+while delivering 40–50 tokens/sec using quantized SLMs.
 
-## 💡 The Solution: HiveMind & EMUs
-HiveMind is an edge-cloud hybrid protocol that introduces the concept of **EMUs (Encapsulated Memory Units)**.
+HiveMind is the anti-enterprise RAG:
+no lock-in, no cloud dependency, no surveillance, no massive vector silos.
 
-### Core Concepts
+🧠 Why HiveMind Exists
 
-#### 1. The EMU (Encapsulated Memory Unit)
-Instead of a monolithic Vector DB, memory is treated as a **portable artifact**.
-* **File-System Based:** Uses LanceDB to store vectors as flat files.
-* **Hot-Swappable:** Agents can "mount" specific knowledge bases (e.g., `legal-v1.emu`, `python-docs.emu`) dynamically.
-* **Version Controlled:** Memory can be versioned, branched, and rolled back like code.
+Current enterprise RAG systems are fundamentally flawed:
 
-#### 2. The "Semantic Firewall" (Local Routing)
-Before any data hits a Cloud LLM (GPT5.1/Claude/Phi/Gemini 3.0), 
-it passes through a local Small Language Model (SLM) gateway.
-* **Router Node:** Uses **Qwen 2.5 (Local)** to classify intent.
-* **Grader Node:** Evaluates retrieval relevance locally.
-* **PII Scrubber:** Redacts sensitive entities on the edge.
+❌ Privacy Risk — They transmit entire context windows (including PII) to cloud LLMs
+❌ Latency — Remote vector DB round-trips slow the entire pipeline
+❌ Cost — Tokens wasted on irrelevant noise
+❌ Vendor Lock-In — Memory trapped inside proprietary cloud systems
+❌ Monolithic Databases — Giant, static vector stores nobody can fork or share
 
-## 🏗 Architecture
+HiveMind flips the model:
 
-**User Query** -> **[Local Router]** (Classifies Intent)
-   |
-   +-> **[EMU Mount]** (Loads specific LanceDB context)
-   |
-   +-> **[Local Grader]** (Filters noise)
-   |
-   +-> **[Cloud LLM]** (Synthesizes final answer with sanitized context)
+Local memory. Cloud inference. Zero noise. Maximum privacy.
+Your machine becomes the router, filter, and guardian at the gate.
 
-## 🛠 Tech Stack
-* **Orchestration:** LangGraph
-* **Local Inference:** Ollama / vLLM
-* **Vector Store:** LanceDB (Serverless)
-* **Routing Model:** Qwen 2.5 1.5B - 2B
-* **Optimized to run on consumer grade CPU / 6GB RTX GPU (with goal of 50TPS) 
+🔥 Core Idea: EMUs
 
-## 🚀 Roadmap
-- [ ] Core EMU Interface (Python)
-- [ ] Local Router Logic (LangGraph)
-- [ ] "Hot-Swap" Mounting Demo
-
----
-*Concept by Virtue_hearts / admin@darknet.ca 
+Encapsulated Memory Units are portable, Git-friendly knowledge capsules:
