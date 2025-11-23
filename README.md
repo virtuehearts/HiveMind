@@ -141,8 +141,8 @@ Zero noise.
 ## 3️⃣ Built for 6GB GPUs & 16GB RAM  
 - Quantized Qwen/Phi models  
 - LanceDB file-backed retrieval  
-- No daemons or servers  
-- No GPU memory spikes  
+- No big corperations having your memories / datasets
+- No need for 24gb+ GPU's or Professional hardware.  
 - Can run on a **Dell OptiPlex**, **ThinkPad**, or **old gaming PC**
 
 ---
