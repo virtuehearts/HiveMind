@@ -7,6 +7,10 @@
 - Route queries through a lightweight local router SLM and selectively escalate to a cloud LLM for synthesis.
 
 ## System Overview
+**Latest updates**
+- Retriever now scans both EMU `notes.md` and any text files in `docs/`, chunking them according to `config.yaml` hints (chunk size/overlap).
+- Configurable `retriever.topK` values are honored per EMU when the API caller does not request a custom top-k.
+
 1. **Frontend (Web Chat)**
    - Slash commands: `/mount <emu>`, `/unmount <emu>`, `/emus`, `/learn <emu> <text|file>`, `/tags <emu>`, `/bench <emu>`, `/router-mode <local|cloud>`, `/reset`.
    - Real-time streaming responses; display mounted EMU(s), intent, and which EMU(s) served context.
