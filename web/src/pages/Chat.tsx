@@ -13,9 +13,7 @@ import {
   fetchRouterDecision,
   fetchRetrieval,
   mountEmu,
-  trainEmu,
-  unmountEmu,
-  uploadEmu
+  unmountEmu
 } from '../api/client';
 
 type Message = { role: 'user' | 'assistant'; content: string };
@@ -40,19 +38,13 @@ const ChatPage = () => {
   const [emus, setEmus] = useState<EmuInfo[]>([]);
   const [mountedEmus, setMountedEmus] = useState<EmuInfo[]>([]);
   const [emuError, setEmuError] = useState<string | null>(null);
-  const [emuBusy, setEmuBusy] = useState(false);
+  const [, setEmuBusy] = useState(false);
   const [retrievals, setRetrievals] = useState<RetrievalResult[]>([]);
   const [openRouterBusy, setOpenRouterBusy] = useState(false);
   const [openRouterModel, setOpenRouterModel] = useState(() => loadPref('openrouterModel', 'openai/gpt-4o-mini'));
   const [openRouterEndpoint, setOpenRouterEndpoint] = useState(() =>
     loadPref('openrouterEndpoint', 'https://openrouter.ai/api/v1/chat/completions')
   );
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [newEmuId, setNewEmuId] = useState('');
-  const [newEmuName, setNewEmuName] = useState('');
-  const [newEmuTags, setNewEmuTags] = useState('');
-  const [newEmuDescription, setNewEmuDescription] = useState('');
-  const [trainingStatus, setTrainingStatus] = useState<string | null>(null);
 
   useEffect(() => {
     fetchModelStatus()
@@ -187,31 +179,6 @@ const ChatPage = () => {
     }
   };
 
-  const handleUpload = async () => {
-    if (!uploadFile) {
-      setEmuError('Select a document to upload.');
-      return;
-    }
-
-    try {
-      setEmuBusy(true);
-      const form = new FormData();
-      form.append('file', uploadFile);
-      if (newEmuId) form.append('id', newEmuId);
-      if (newEmuName) form.append('name', newEmuName);
-      if (newEmuDescription) form.append('description', newEmuDescription);
-      if (newEmuTags) form.append('tags', newEmuTags);
-      await uploadEmu(form);
-      setTrainingStatus('Uploaded document and updated EMU index.');
-      await refreshEmus();
-    } catch (err) {
-      console.error(err);
-      setEmuError('Unable to upload EMU document.');
-    } finally {
-      setEmuBusy(false);
-    }
-  };
-
   const handleSlashCommand = async (command: string) => {
     if (!command.startsWith('/')) return false;
 
@@ -274,29 +241,14 @@ const ChatPage = () => {
     }
   };
 
-  const handleTrain = async (emuId: string) => {
-    try {
-      setEmuBusy(true);
-      setTrainingStatus(`Training ${emuId} via OpenRouter…`);
-      const result = await trainEmu(emuId, openRouterModel, openRouterEndpoint);
-      setTrainingStatus(`Trained ${emuId} on ${result.document} with ${result.model}.`);
-    } catch (err) {
-      console.error(err);
-      setEmuError('Unable to train EMU with OpenRouter. Check keys and endpoint.');
-    } finally {
-      setEmuBusy(false);
-    }
-  };
-
   return (
     <div className="panel">
       <div className="panel-header">
         <div>
           <p className="eyebrow">Local-first chat</p>
-          <h2>HiveMind router + EMU console</h2>
+          <h2>HiveMind router</h2>
           <p className="muted">
-            Mount EMUs, chat locally, and only escalate to OpenRouter when you choose. Follow the quick-start cards below and
-            then type a message or slash command.
+            Type a message or slash command. Everything else lives in Preferences so this screen stays focused on chatting.
           </p>
         </div>
         <div className="status">
@@ -307,33 +259,39 @@ const ChatPage = () => {
         </div>
       </div>
 
-      <div className="readiness-grid">
-        <div className="info-card">
-          <p className="eyebrow">Backend</p>
-          <p className="muted">{apiBase}</p>
-          <p className="muted small">Set VITE_API_URL or override in Settings if you are testing remotely.</p>
+      <div className="status-strip">
+        <div className="status-chip">
+          <span className="eyebrow">Backend</span>
+          <strong>{apiBase}</strong>
         </div>
-        <div className="info-card">
-          <p className="eyebrow">Router model</p>
-          <p className="muted">{modelStatus?.model || 'qwen2.5:1.5b (default)'}</p>
-          <p className="muted small">Run `ollama pull qwen2.5:1.5b` and keep the Ollama daemon running.</p>
+        <div className="status-chip">
+          <span className="eyebrow">Router</span>
+          <strong>{modelStatus?.model || 'qwen2.5:1.5b (default)'}</strong>
         </div>
-        <div className="info-card">
-          <p className="eyebrow">EMU state</p>
-          <p className="muted">{mountedEmus.length ? `${mountedEmus.length} mounted` : 'No EMUs mounted yet'}</p>
-          <p className="muted small">Add *.emu folders under /emus, then /mount &lt;emu-id&gt; to activate.</p>
+        <div className="status-chip">
+          <span className="eyebrow">EMUs</span>
+          <strong>{mountedEmus.length} mounted / {emus.length} available</strong>
         </div>
-        <div className="info-card">
-          <p className="eyebrow">Quick steps</p>
-          <ol className="meta-list ordered">
-            <li>Start backend: npm run dev:server</li>
-            <li>Start UI: npm run dev:web (http://localhost:5173)</li>
-            <li>/emus → /mount poetry.emu → ask a question</li>
-          </ol>
+        <div className="status-chip">
+          <span className="eyebrow">Live status</span>
+          <strong>{status === 'idle' ? 'Idle' : status === 'routing' ? 'Routing…' : 'Chatting…'}</strong>
         </div>
       </div>
 
-      <div className="info-grid">
+      {(error || emuError) && (
+        <div className="info-card warn">
+          {error && <p className="error">{error}</p>}
+          {emuError && <p className="error">{emuError}</p>}
+        </div>
+      )}
+
+      <div className="chat-window">
+        {messages.map((message, index) => (
+          <MessageBubble key={index} role={message.role} content={message.content} />
+        ))}
+      </div>
+
+      <div className="info-grid compact">
         <div className="info-card">
           <p className="eyebrow">Router decision</p>
           {decision ? (
@@ -350,22 +308,10 @@ const ChatPage = () => {
                 <span>Tags</span>
                 <strong>{decision.tags.join(', ') || 'none'}</strong>
               </li>
-              {decision.notes && (
-                <li>
-                  <span>Notes</span>
-                  <strong>{decision.notes}</strong>
-                </li>
-              )}
             </ul>
           ) : (
             <p className="muted">Send a message to see router intent and tags.</p>
           )}
-        </div>
-        <div className="info-card">
-          <p className="eyebrow">Live status</p>
-          <p className="muted">{status === 'idle' ? 'Idle' : status === 'routing' ? 'Routing…' : 'Chatting…'}</p>
-          {error && <p className="error">{error}</p>}
-          <p className="muted small">If routing fails, verify the backend URL and that Ollama is running.</p>
         </div>
         <div className="info-card">
           <p className="eyebrow">Context preview</p>
@@ -383,7 +329,7 @@ const ChatPage = () => {
               ))}
             </ul>
           ) : (
-            <p className="muted">No context retrieved yet. Mount an EMU and ask a question that needs references.</p>
+            <p className="muted">Mount an EMU in Preferences to see context here.</p>
           )}
         </div>
         <div className="info-card">
@@ -395,7 +341,7 @@ const ChatPage = () => {
             </li>
             <li>
               <span>/mount &lt;emu-id&gt;</span>
-              <strong>Attach an EMU for retrieval</strong>
+              <strong>Attach an EMU</strong>
             </li>
             <li>
               <span>/unmount &lt;emu-id&gt;</span>
@@ -407,135 +353,6 @@ const ChatPage = () => {
             </li>
           </ul>
         </div>
-      </div>
-
-      <div className="emu-board">
-        <div className="info-card">
-          <div className="emu-card-header">
-            <p className="eyebrow">Mounted EMUs</p>
-            <button className="ghost" onClick={refreshEmus} disabled={emuBusy}>
-              Refresh
-            </button>
-          </div>
-          {mountedEmus.length ? (
-            <ul className="meta-list">
-              {mountedEmus.map((emu) => (
-                <li key={emu.id} className="emu-row">
-                  <div>
-                    <strong>{emu.name}</strong>
-                    <p className="muted">{emu.tags.join(', ') || 'No tags'}</p>
-                    {emu.blockVersions && (
-                      <p className="muted">{emu.blockVersions.length} versioned blocks</p>
-                    )}
-                  </div>
-                  <div className="emu-actions">
-                    <button className="ghost" onClick={() => handleTrain(emu.id)} disabled={emuBusy}>
-                      Train
-                    </button>
-                    <button className="ghost" onClick={() => handleMount(emu.id, 'unmount')} disabled={emuBusy}>
-                      Unmount
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No EMUs mounted. Mount one from the list below.</p>
-          )}
-          {trainingStatus && <p className="muted">{trainingStatus}</p>}
-          {emuError && <p className="error">{emuError}</p>}
-        </div>
-
-        <div className="info-card">
-          <div className="emu-card-header">
-            <p className="eyebrow">Upload / version EMU</p>
-            <span className="badge ghost">Experimental</span>
-          </div>
-          <div className="upload-grid">
-            <label className="muted">
-              EMU id
-              <input value={newEmuId} onChange={(e) => setNewEmuId(e.target.value)} placeholder="finance-playbook" />
-            </label>
-            <label className="muted">
-              Name
-              <input value={newEmuName} onChange={(e) => setNewEmuName(e.target.value)} placeholder="Finance Playbook" />
-            </label>
-            <label className="muted">
-              Tags (comma separated)
-              <input value={newEmuTags} onChange={(e) => setNewEmuTags(e.target.value)} placeholder="ops, runbooks" />
-            </label>
-            <label className="muted">
-              Description
-              <input
-                value={newEmuDescription}
-                onChange={(e) => setNewEmuDescription(e.target.value)}
-                placeholder="What this EMU captures"
-              />
-            </label>
-            <label className="muted">
-              Document
-              <input type="file" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
-            </label>
-          </div>
-          <button className="ghost" onClick={handleUpload} disabled={emuBusy}>
-            Upload and index
-          </button>
-        </div>
-      </div>
-
-      <div className="info-card">
-        <div className="emu-card-header">
-          <p className="eyebrow">Available EMUs</p>
-          <span className="badge ghost">{emus.length}</span>
-        </div>
-        {emus.length ? (
-          <ul className="emu-list">
-            {emus.map((emu) => {
-              const isMounted = mountedEmus.some((mounted) => mounted.id === emu.id);
-              return (
-                <li key={emu.id} className="emu-row">
-                  <div>
-                    <strong>{emu.name}</strong>
-                    <p className="muted">{emu.description || 'No description'}</p>
-                    <div className="tag-row">
-                      {emu.tags.map((tag) => (
-                        <span key={tag} className="tag-pill">
-                          {tag}
-                        </span>
-                      ))}
-                      {emu.blockVersions && emu.blockVersions.length > 0 && (
-                        <span className="badge ghost">{emu.blockVersions.length} blocks</span>
-                      )}
-                      {emu.benchmarkScore !== undefined && (
-                        <span className="badge ghost">Bench {emu.benchmarkScore.toFixed(2)}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="emu-actions">
-                    <button
-                      className="ghost"
-                      onClick={() => handleMount(emu.id, isMounted ? 'unmount' : 'mount')}
-                      disabled={emuBusy}
-                    >
-                      {isMounted ? 'Unmount' : 'Mount'}
-                    </button>
-                    <button className="ghost" onClick={() => handleTrain(emu.id)} disabled={emuBusy}>
-                      Train
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p className="muted">No EMUs discovered yet. Add a folder ending with .emu under the emus/ directory.</p>
-        )}
-      </div>
-
-      <div className="chat-window">
-        {messages.map((message, index) => (
-          <MessageBubble key={index} role={message.role} content={message.content} />
-        ))}
       </div>
 
       <form className="chat-input" onSubmit={sendMessage}>
