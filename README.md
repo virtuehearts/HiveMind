@@ -27,6 +27,7 @@ HiveMind is a **local-first, edge-augmented RAG protocol** that treats memory as
    ```
 4. **Download the router model**
    ```bash
+   curl -fsSL https://ollama.com/install.sh | sh
    ollama pull qwen2.5:1.5b
    ```
 5. **Start the backend** (API on http://localhost:4000)
