@@ -21,10 +21,16 @@ HiveMind is a **local-first, edge-augmented RAG protocol** that treats memory as
 The frontend uses the backend router endpoints (`/api/route` and `/api/chat`) to exercise the local Qwen 1.5B model before the rest of the RAG stack is added.
 
 
-It is designed to run on:  
-✅ **Consumer CPUs (16GB RAM)**  
-✅ **NVIDIA RTX GPUs (6GB VRAM)**  
+It is designed to run on:
+✅ **Consumer CPUs (16GB RAM)**
+✅ **NVIDIA RTX GPUs (6GB VRAM)**
 while delivering **40–50 tokens/sec** using quantized SLMs.
+
+## Using the EMU-ready chat UI
+- The Chat page shows readiness cards for the backend URL, router model, mounted EMUs, and the three startup steps above.
+- Use slash commands directly from the input box: `/emus` to list, `/mount <emu-id>`, `/unmount <emu-id>`, and `/reset`.
+- Add folders ending in `.emu` under `emus/`, refresh, then mount and ask questions to see retrieved context in the preview panel.
+- Settings allow overriding the API base if your backend is not on `http://localhost:4000`.
 
 HiveMind is the **anti-enterprise RAG**:  
 no lock-in, no cloud dependency, no surveillance, no massive vector silos.

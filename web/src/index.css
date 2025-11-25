@@ -154,6 +154,12 @@ a {
   gap: 12px;
 }
 
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
 .info-card {
   padding: 16px;
   border: 1px solid #1f2937;
@@ -180,6 +186,12 @@ a {
   justify-content: space-between;
   gap: 8px;
   color: #e2e8f0;
+}
+
+.meta-list.ordered li {
+  display: list-item;
+  justify-content: flex-start;
+  padding-left: 6px;
 }
 
 .meta-list span {
@@ -351,6 +363,12 @@ a {
   border: 1px solid #1f2937;
   background: rgba(255, 255, 255, 0.04);
   color: #e2e8f0;
+}
+
+.emu-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
 }
 
 .chat-actions {

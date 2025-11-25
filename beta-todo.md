@@ -4,6 +4,7 @@ Progress tracker for getting the HiveMind chat running locally with EMUs per the
 
 ## Completed
 - [x] Reviewed `HiveMindplan.md` and `README.md` for architecture and setup expectations.
+- [x] Streamlined chat UI with EMU readiness cards, slash-command helper, and local testing prompts.
 
 ## To-Do
 - [ ] Install prerequisites: Node.js (18+), npm, and [Ollama](https://ollama.com) with GPU/CPU support as available.
