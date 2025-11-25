@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import router from './routes/router';
 import { config } from './config';
+import emuRoutes from './routes/emu';
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api', router);
+app.use('/api', emuRoutes);
 
 app.listen(config.port, () => {
   console.log(`HiveMind backend listening on port ${config.port}`);

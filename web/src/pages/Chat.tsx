@@ -2,10 +2,15 @@ import { FormEvent, useEffect, useState } from 'react';
 import MessageBubble from '../components/MessageBubble';
 import {
   ChatCompletion,
+  EmuInfo,
+  EmuMountResponse,
   RouterDecision,
   fetchChatCompletion,
+  fetchEmus,
   fetchModelStatus,
-  fetchRouterDecision
+  fetchRouterDecision,
+  mountEmu,
+  unmountEmu
 } from '../api/client';
 
 type Message = { role: 'user' | 'assistant'; content: string };
@@ -21,12 +26,29 @@ const ChatPage = () => {
   const [status, setStatus] = useState<'idle' | 'routing' | 'chatting'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [modelStatus, setModelStatus] = useState<ModelStatus>(null);
+  const [emus, setEmus] = useState<EmuInfo[]>([]);
+  const [mountedEmus, setMountedEmus] = useState<EmuInfo[]>([]);
+  const [emuError, setEmuError] = useState<string | null>(null);
+  const [emuBusy, setEmuBusy] = useState(false);
 
   useEffect(() => {
     fetchModelStatus()
       .then(setModelStatus)
       .catch(() => setModelStatus(null));
+    refreshEmus();
   }, []);
+
+  const refreshEmus = async () => {
+    try {
+      const { emus: available, mounted } = await fetchEmus();
+      setEmus(available);
+      setMountedEmus(mounted);
+      setEmuError(null);
+    } catch (err) {
+      console.error(err);
+      setEmuError('Unable to load EMUs from the backend.');
+    }
+  };
 
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -51,6 +73,24 @@ const ChatPage = () => {
       setError('Unable to reach the local router. Make sure Ollama is running with the Qwen 1.5B model.');
     } finally {
       setStatus('idle');
+    }
+  };
+
+  const handleMount = async (emuId: string, action: 'mount' | 'unmount') => {
+    try {
+      setEmuBusy(true);
+      const response: EmuMountResponse =
+        action === 'mount' ? await mountEmu(emuId) : await unmountEmu(emuId);
+      setMountedEmus(response.mounted);
+      if (response.active && !decision) {
+        setDecision({ intent: 'mount', needsContext: true, tags: response.active.tags });
+      }
+      setEmuError(null);
+    } catch (err) {
+      console.error(err);
+      setEmuError('Unable to update EMU mount state.');
+    } finally {
+      setEmuBusy(false);
     }
   };
 
@@ -103,6 +143,75 @@ const ChatPage = () => {
           <p className="muted">{status === 'idle' ? 'Idle' : status === 'routing' ? 'Routing…' : 'Chatting…'}</p>
           {error && <p className="error">{error}</p>}
         </div>
+        <div className="info-card">
+          <div className="emu-card-header">
+            <p className="eyebrow">Mounted EMUs</p>
+            <button className="ghost" onClick={refreshEmus} disabled={emuBusy}>
+              Refresh
+            </button>
+          </div>
+          {mountedEmus.length ? (
+            <ul className="meta-list">
+              {mountedEmus.map((emu) => (
+                <li key={emu.id} className="emu-row">
+                  <div>
+                    <strong>{emu.name}</strong>
+                    <p className="muted">{emu.tags.join(', ') || 'No tags'}</p>
+                  </div>
+                  <button className="ghost" onClick={() => handleMount(emu.id, 'unmount')} disabled={emuBusy}>
+                    Unmount
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No EMUs mounted. Mount one from the list below.</p>
+          )}
+          {emuError && <p className="error">{emuError}</p>}
+        </div>
+      </div>
+
+      <div className="info-card">
+        <div className="emu-card-header">
+          <p className="eyebrow">Available EMUs</p>
+          <span className="badge ghost">{emus.length}</span>
+        </div>
+        {emus.length ? (
+          <ul className="emu-list">
+            {emus.map((emu) => {
+              const isMounted = mountedEmus.some((mounted) => mounted.id === emu.id);
+              return (
+                <li key={emu.id} className="emu-row">
+                  <div>
+                    <strong>{emu.name}</strong>
+                    <p className="muted">{emu.description || 'No description'}</p>
+                    <div className="tag-row">
+                      {emu.tags.map((tag) => (
+                        <span key={tag} className="tag-pill">
+                          {tag}
+                        </span>
+                      ))}
+                      {emu.benchmarkScore !== undefined && (
+                        <span className="badge ghost">Bench {emu.benchmarkScore.toFixed(2)}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="emu-actions">
+                    <button
+                      className="ghost"
+                      onClick={() => handleMount(emu.id, isMounted ? 'unmount' : 'mount')}
+                      disabled={emuBusy}
+                    >
+                      {isMounted ? 'Unmount' : 'Mount'}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="muted">No EMUs discovered yet. Add a folder ending with .emu under the emus/ directory.</p>
+        )}
       </div>
 
       <div className="chat-window">

@@ -12,6 +12,37 @@ export interface ChatCompletion {
   tokens?: number;
 }
 
+export interface EmuInfo {
+  id: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  benchmarkScore?: number;
+  path: string;
+  notesPath?: string;
+  config?: {
+    embeddingModel?: string;
+    retriever?: {
+      topK?: number;
+      keywordWeight?: number;
+    };
+    chunking?: {
+      size?: number;
+      overlap?: number;
+    };
+  };
+}
+
+export interface EmuListResponse {
+  emus: EmuInfo[];
+  mounted: EmuInfo[];
+}
+
+export interface EmuMountResponse {
+  mounted: EmuInfo[];
+  active?: EmuInfo;
+}
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
@@ -25,6 +56,14 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     throw new Error(`Request failed: ${response.status}`);
   }
 
+  return response.json();
+}
+
+async function getJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`);
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
   return response.json();
 }
 
@@ -42,4 +81,16 @@ export async function fetchModelStatus() {
     throw new Error('Unable to load model status');
   }
   return response.json();
+}
+
+export function fetchEmus() {
+  return getJson<EmuListResponse>('/api/emus');
+}
+
+export function mountEmu(id: string) {
+  return postJson<EmuMountResponse>('/api/emus/mount', { id });
+}
+
+export function unmountEmu(id: string) {
+  return postJson<EmuMountResponse>('/api/emus/unmount', { id });
 }

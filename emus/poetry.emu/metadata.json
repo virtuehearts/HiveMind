@@ -1,0 +1,8 @@
+{
+  "id": "poetry",
+  "name": "Poetry Demo EMU",
+  "description": "Sample EMU containing brief poetry snippets and tags for testing the mounting flow.",
+  "tags": ["poetry", "demo", "english"],
+  "benchmarkScore": 0.42,
+  "notesPath": "notes.md"
+}
