@@ -11,5 +11,8 @@ export const config = {
     process.env.CORS_ORIGINS?.split(',')
       .map((origin) => origin.trim())
       .filter(Boolean) || ['http://localhost:5173'],
-  emuRoot: process.env.EMU_ROOT || path.join(process.cwd(), 'emus')
+  emuRoot: process.env.EMU_ROOT || path.join(process.cwd(), 'emus'),
+  openRouterApiKey: process.env.OPENROUTER_API_KEY,
+  openRouterEndpoint: process.env.OPENROUTER_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions',
+  openRouterModel: process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini'
 };

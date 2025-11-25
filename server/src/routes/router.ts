@@ -2,9 +2,13 @@ import { Router } from 'express';
 import { config } from '../config';
 import { OllamaClient } from '../services/ollamaClient';
 import { RouterRequestBody } from '../types';
+import { retrieve } from '../services/retriever';
+import { OpenRouterClient } from '../services/openRouterClient';
+import { emuManager } from '../services/emuManager';
 
 const router = Router();
 const ollama = new OllamaClient();
+const openRouter = new OpenRouterClient();
 
 router.get('/model', async (_req, res) => {
   const available = await ollama.checkModelAvailability(config.routerModel);
@@ -38,6 +42,23 @@ router.post('/chat', async (req, res) => {
   } catch (error) {
     console.error('Chat error', error);
     res.status(500).json({ error: 'Failed to complete chat' });
+  }
+});
+
+router.post('/chat/openrouter', async (req, res) => {
+  const { message, model, endpoint } = req.body as { message?: string; model?: string; endpoint?: string };
+  if (!message) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+
+  try {
+    await emuManager.ensureLoaded();
+    const context = await retrieve(message, 6);
+    const completion = await openRouter.chatWithContext(message, context, model, endpoint);
+    res.json(completion);
+  } catch (error) {
+    console.error('OpenRouter error', error);
+    res.status(500).json({ error: 'Failed to reach OpenRouter' });
   }
 });
 
