@@ -1,10 +1,7 @@
 import { Ollama } from 'ollama';
 import { config } from '../config';
 import { ChatCompletion, RetrievalResult, RouterDecision } from '../types';
-
-const routerSystemPrompt = `You are the HiveMind local router. Given a user message, decide intent and whether retrieval is needed.
-Respond with compact JSON using keys intent, needsContext (true/false), tags (array of short tags), and notes.
-Keep responses short and avoid additional commentary.`;
+import { hiveMindChatPrompt, hiveMindRoutingPrompt } from './prompts';
 
 export class OllamaClient {
   private client: Ollama;
@@ -29,7 +26,7 @@ export class OllamaClient {
     const response = await this.client.chat({
       model,
       messages: [
-        { role: 'system', content: routerSystemPrompt },
+        { role: 'system', content: hiveMindRoutingPrompt },
         { role: 'user', content: message }
       ],
       stream: false
@@ -62,8 +59,8 @@ export class OllamaClient {
       .join('\n\n');
 
     const systemPrompt = context?.length
-      ? `You are a concise assistant for HiveMind local development. Use the EMU context snippets when relevant and cite the EMU name when answering.`
-      : 'You are a concise assistant for HiveMind local development.';
+      ? `${hiveMindChatPrompt}\n\nContext handling:\n- Use the EMU context snippets when relevant and cite the EMU name.\n- If the provided context is irrelevant, answer from your local knowledge concisely.`
+      : hiveMindChatPrompt;
 
     const userContent = context?.length
       ? `User message: ${message}\n\nContext:\n${contextText}\n\nIf the context is relevant, use it to answer the user clearly.`
