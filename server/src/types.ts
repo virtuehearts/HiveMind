@@ -36,6 +36,7 @@ export interface EmuMetadata {
   tags?: string[];
   benchmarkScore?: number;
   notesPath?: string;
+  blockVersions?: EmuBlockVersion[];
 }
 
 export interface EmuRecord {
@@ -47,6 +48,21 @@ export interface EmuRecord {
   path: string;
   notesPath?: string;
   config?: EmuConfig;
+  blockVersions?: EmuBlockVersion[];
+}
+
+export interface EmuBlockVersion {
+  id: string;
+  file: string;
+  version: number;
+  updatedAt: string;
+  summary?: string;
+}
+
+export interface EmuDownloadPayload {
+  emu: EmuRecord;
+  notes?: string;
+  documents: { file: string; size: number }[];
 }
 
 export interface RetrievalResult {

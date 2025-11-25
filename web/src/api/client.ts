@@ -20,6 +20,7 @@ export interface EmuInfo {
   benchmarkScore?: number;
   path: string;
   notesPath?: string;
+  blockVersions?: EmuBlockVersion[];
   config?: {
     embeddingModel?: string;
     retriever?: {
@@ -31,6 +32,14 @@ export interface EmuInfo {
       overlap?: number;
     };
   };
+}
+
+export interface EmuBlockVersion {
+  id: string;
+  file: string;
+  version: number;
+  updatedAt: string;
+  summary?: string;
 }
 
 export interface EmuListResponse {
@@ -55,10 +64,26 @@ export interface RetrievalResponse {
   results: RetrievalResult[];
 }
 
+export interface EmuDownload {
+  emu: EmuInfo;
+  notes?: string;
+  documents: { file: string; size: number }[];
+}
+
+export interface OpenRouterResponse extends ChatCompletion {
+  contextUsed?: RetrievalResult[];
+}
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
+function getApiBase() {
+  if (typeof localStorage === 'undefined') return API_BASE;
+  const override = localStorage.getItem('apiBaseOverride');
+  return override || API_BASE;
+}
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${getApiBase()}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
@@ -72,7 +97,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
+  const response = await fetch(`${getApiBase()}${path}`);
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status}`);
   }
@@ -92,7 +117,7 @@ export function fetchRetrieval(message: string, topK?: number) {
 }
 
 export async function fetchModelStatus() {
-  const response = await fetch(`${API_BASE}/api/model`);
+  const response = await fetch(`${getApiBase()}/api/model`);
   if (!response.ok) {
     throw new Error('Unable to load model status');
   }
@@ -109,4 +134,26 @@ export function mountEmu(id: string) {
 
 export function unmountEmu(id: string) {
   return postJson<EmuMountResponse>('/api/emus/unmount', { id });
+}
+
+export function uploadEmu(formData: FormData) {
+  return fetch(`${getApiBase()}/api/emus/upload`, {
+    method: 'POST',
+    body: formData
+  }).then((resp) => {
+    if (!resp.ok) throw new Error('Upload failed');
+    return resp.json();
+  });
+}
+
+export function downloadEmu(id: string) {
+  return getJson<EmuDownload>(`/api/emus/${id}/download`);
+}
+
+export function trainEmu(id: string, model?: string, endpoint?: string) {
+  return postJson<{ summary: string; model: string; document: string }>(`/api/emus/${id}/train`, { model, endpoint });
+}
+
+export function fetchOpenRouterChat(message: string, model?: string, endpoint?: string) {
+  return postJson<OpenRouterResponse>('/api/chat/openrouter', { message, model, endpoint });
 }
