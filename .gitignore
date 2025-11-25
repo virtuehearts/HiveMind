@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.env
+.DS_Store
+dist
+pnpm-lock.yaml
+yarn.lock
+.vscode
+.vercel
+.netlify

@@ -1,0 +1,17 @@
+{
+  "name": "hivemind",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HiveMind local-first agentic RAG stack",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev:server": "npm --workspace server run dev",
+    "dev:web": "npm --workspace web run dev",
+    "build": "npm --workspace server run build && npm --workspace web run build",
+    "start": "npm --workspace server run start"
+  },
+  "license": "MIT"
+}
