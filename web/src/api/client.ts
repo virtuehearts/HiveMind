@@ -43,6 +43,18 @@ export interface EmuMountResponse {
   active?: EmuInfo;
 }
 
+export interface RetrievalResult {
+  emuId: string;
+  emuName: string;
+  snippet: string;
+  score: number;
+  source?: string;
+}
+
+export interface RetrievalResponse {
+  results: RetrievalResult[];
+}
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
@@ -73,6 +85,10 @@ export function fetchRouterDecision(message: string) {
 
 export function fetchChatCompletion(message: string) {
   return postJson<ChatCompletion>('/api/chat', { message });
+}
+
+export function fetchRetrieval(message: string, topK?: number) {
+  return postJson<RetrievalResponse>('/api/retrieve', { message, topK });
 }
 
 export async function fetchModelStatus() {

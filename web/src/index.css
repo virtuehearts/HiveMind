@@ -301,6 +301,12 @@ a {
   gap: 12px;
 }
 
+.snippet {
+  margin: 6px 0 0;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+}
+
 .tag-row {
   display: flex;
   gap: 6px;

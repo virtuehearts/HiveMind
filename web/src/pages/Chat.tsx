@@ -5,10 +5,12 @@ import {
   EmuInfo,
   EmuMountResponse,
   RouterDecision,
+  RetrievalResult,
   fetchChatCompletion,
   fetchEmus,
   fetchModelStatus,
   fetchRouterDecision,
+  fetchRetrieval,
   mountEmu,
   unmountEmu
 } from '../api/client';
@@ -30,6 +32,7 @@ const ChatPage = () => {
   const [mountedEmus, setMountedEmus] = useState<EmuInfo[]>([]);
   const [emuError, setEmuError] = useState<string | null>(null);
   const [emuBusy, setEmuBusy] = useState(false);
+  const [retrievals, setRetrievals] = useState<RetrievalResult[]>([]);
 
   useEffect(() => {
     fetchModelStatus()
@@ -64,6 +67,13 @@ const ChatPage = () => {
       setStatus('routing');
       const nextDecision = await fetchRouterDecision(trimmed);
       setDecision(nextDecision);
+
+      if (nextDecision.needsContext) {
+        const { results } = await fetchRetrieval(trimmed, 4);
+        setRetrievals(results);
+      } else {
+        setRetrievals([]);
+      }
 
       setStatus('chatting');
       const completion: ChatCompletion = await fetchChatCompletion(trimmed);
@@ -134,11 +144,11 @@ const ChatPage = () => {
                 </li>
               )}
             </ul>
-          ) : (
-            <p className="muted">Send a message to see router intent and tags.</p>
-          )}
-        </div>
-        <div className="info-card">
+      ) : (
+        <p className="muted">Send a message to see router intent and tags.</p>
+      )}
+    </div>
+    <div className="info-card">
           <p className="eyebrow">Live status</p>
           <p className="muted">{status === 'idle' ? 'Idle' : status === 'routing' ? 'Routing…' : 'Chatting…'}</p>
           {error && <p className="error">{error}</p>}
@@ -167,8 +177,27 @@ const ChatPage = () => {
           ) : (
             <p className="muted">No EMUs mounted. Mount one from the list below.</p>
           )}
-          {emuError && <p className="error">{emuError}</p>}
-        </div>
+      {emuError && <p className="error">{emuError}</p>}
+    </div>
+    <div className="info-card">
+      <p className="eyebrow">Context preview</p>
+      {retrievals.length ? (
+        <ul className="meta-list ordered">
+          {retrievals.map((hit, index) => (
+            <li key={`${hit.emuId}-${index}`} className="emu-row">
+              <div>
+                <strong>{hit.emuName}</strong>
+                <p className="muted">Score {hit.score.toFixed(2)}</p>
+                <p className="snippet">{hit.snippet}</p>
+              </div>
+              {hit.source && <span className="badge ghost">{hit.source}</span>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">No context retrieved yet. Mount an EMU and ask a question that needs references.</p>
+      )}
+    </div>
       </div>
 
       <div className="info-card">
