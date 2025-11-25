@@ -13,6 +13,7 @@ import {
   fetchRouterDecision,
   fetchRetrieval,
   mountEmu,
+  resolveDefaultApiBase,
   unmountEmu
 } from '../api/client';
 
@@ -33,7 +34,7 @@ const ChatPage = () => {
   const [decision, setDecision] = useState<RouterDecision | null>(null);
   const [status, setStatus] = useState<'idle' | 'routing' | 'chatting'>('idle');
   const [modelStatus, setModelStatus] = useState<ModelStatus>(null);
-  const [apiBase, setApiBase] = useState(import.meta.env.VITE_API_URL || 'http://localhost:4000');
+  const [apiBase, setApiBase] = useState(resolveDefaultApiBase());
   const [emus, setEmus] = useState<EmuInfo[]>([]);
   const [mountedEmus, setMountedEmus] = useState<EmuInfo[]>([]);
   const [, setEmuBusy] = useState(false);
@@ -72,10 +73,9 @@ const ChatPage = () => {
   useEffect(() => {
     setOpenRouterModel(loadPref('openrouterModel', 'openai/gpt-4o-mini'));
     setOpenRouterEndpoint(loadPref('openrouterEndpoint', 'https://openrouter.ai/api/v1/chat/completions'));
-    if (typeof localStorage !== 'undefined') {
-      const override = localStorage.getItem('apiBaseOverride');
-      if (override) setApiBase(override);
-    }
+    if (typeof localStorage === 'undefined') return;
+    const override = localStorage.getItem('apiBaseOverride');
+    if (override) setApiBase(override);
   }, []);
 
   const refreshEmus = async () => {
