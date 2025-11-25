@@ -48,3 +48,11 @@ export interface EmuRecord {
   notesPath?: string;
   config?: EmuConfig;
 }
+
+export interface RetrievalResult {
+  emuId: string;
+  emuName: string;
+  snippet: string;
+  score: number;
+  source?: string;
+}
