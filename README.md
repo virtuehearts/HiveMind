@@ -12,6 +12,34 @@ by **Virtue_hearts** (Darknet.ca Labs)
 # ⚡ Overview  
 HiveMind is a **local-first, edge-augmented RAG protocol** that treats memory as **portable, hot-swappable artifacts** called **EMUs (Encapsulated Memory Units)** — instead of giant monolithic vector databases.
 
+## 🚀 Quick Setup Guide
+1. **Install prerequisites**
+   - [Node.js 20+](https://nodejs.org) (includes `npm`)
+   - [Ollama](https://ollama.com) for the local router model
+2. **Clone the repo**
+   ```bash
+   git clone https://github.com/virtuehearts/HiveMind.git
+   cd HiveMind
+   ```
+3. **Install dependencies** (backend + Vite frontend)
+   ```bash
+   npm install
+   ```
+4. **Download the router model**
+   ```bash
+   ollama pull qwen2.5:1.5b
+   ```
+5. **Start the backend** (API on http://localhost:4000)
+   ```bash
+   npm run dev:server
+   ```
+6. **Start the web UI** in a second terminal (http://localhost:5173)
+   ```bash
+   npm run dev:web
+   ```
+7. **Verify connectivity**
+   - Open the web UI and confirm the readiness cards for backend URL, router model, and EMU mounts show green.
+
 ## Getting started (local router + web UI)
 1. Install [Ollama](https://ollama.com) locally and pull the lightweight router model: `ollama pull qwen2.5:1.5b`.
 2. Install workspace dependencies: `npm install` (this sets up both the backend and the Vite frontend).
