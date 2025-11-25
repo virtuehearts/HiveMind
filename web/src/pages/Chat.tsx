@@ -36,6 +36,7 @@ const ChatPage = () => {
   const [status, setStatus] = useState<'idle' | 'routing' | 'chatting'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [modelStatus, setModelStatus] = useState<ModelStatus>(null);
+  const [apiBase, setApiBase] = useState(import.meta.env.VITE_API_URL || 'http://localhost:4000');
   const [emus, setEmus] = useState<EmuInfo[]>([]);
   const [mountedEmus, setMountedEmus] = useState<EmuInfo[]>([]);
   const [emuError, setEmuError] = useState<string | null>(null);
@@ -63,6 +64,10 @@ const ChatPage = () => {
   useEffect(() => {
     setOpenRouterModel(loadPref('openrouterModel', 'openai/gpt-4o-mini'));
     setOpenRouterEndpoint(loadPref('openrouterEndpoint', 'https://openrouter.ai/api/v1/chat/completions'));
+    if (typeof localStorage !== 'undefined') {
+      const override = localStorage.getItem('apiBaseOverride');
+      if (override) setApiBase(override);
+    }
   }, []);
 
   const refreshEmus = async () => {
@@ -287,15 +292,44 @@ const ChatPage = () => {
     <div className="panel">
       <div className="panel-header">
         <div>
-          <p className="eyebrow">Local router</p>
-          <h2>Qwen 1.5B via Ollama</h2>
-          <p className="muted">Routes chat messages locally before escalating to retrieval or cloud models.</p>
+          <p className="eyebrow">Local-first chat</p>
+          <h2>HiveMind router + EMU console</h2>
+          <p className="muted">
+            Mount EMUs, chat locally, and only escalate to OpenRouter when you choose. Follow the quick-start cards below and
+            then type a message or slash command.
+          </p>
         </div>
         <div className="status">
           <span className={`badge ${modelStatus?.available ? 'success' : 'warn'}`}>
             {modelStatus?.available ? 'Model ready' : 'Model unavailable'}
           </span>
           {modelStatus && <span className="badge ghost">{modelStatus.model}</span>}
+        </div>
+      </div>
+
+      <div className="readiness-grid">
+        <div className="info-card">
+          <p className="eyebrow">Backend</p>
+          <p className="muted">{apiBase}</p>
+          <p className="muted small">Set VITE_API_URL or override in Settings if you are testing remotely.</p>
+        </div>
+        <div className="info-card">
+          <p className="eyebrow">Router model</p>
+          <p className="muted">{modelStatus?.model || 'qwen2.5:1.5b (default)'}</p>
+          <p className="muted small">Run `ollama pull qwen2.5:1.5b` and keep the Ollama daemon running.</p>
+        </div>
+        <div className="info-card">
+          <p className="eyebrow">EMU state</p>
+          <p className="muted">{mountedEmus.length ? `${mountedEmus.length} mounted` : 'No EMUs mounted yet'}</p>
+          <p className="muted small">Add *.emu folders under /emus, then /mount &lt;emu-id&gt; to activate.</p>
+        </div>
+        <div className="info-card">
+          <p className="eyebrow">Quick steps</p>
+          <ol className="meta-list ordered">
+            <li>Start backend: npm run dev:server</li>
+            <li>Start UI: npm run dev:web (http://localhost:5173)</li>
+            <li>/emus → /mount poetry.emu → ask a question</li>
+          </ol>
         </div>
       </div>
 
@@ -331,7 +365,51 @@ const ChatPage = () => {
           <p className="eyebrow">Live status</p>
           <p className="muted">{status === 'idle' ? 'Idle' : status === 'routing' ? 'Routing…' : 'Chatting…'}</p>
           {error && <p className="error">{error}</p>}
+          <p className="muted small">If routing fails, verify the backend URL and that Ollama is running.</p>
         </div>
+        <div className="info-card">
+          <p className="eyebrow">Context preview</p>
+          {retrievals.length ? (
+            <ul className="meta-list ordered">
+              {retrievals.map((hit, index) => (
+                <li key={`${hit.emuId}-${index}`} className="emu-row">
+                  <div>
+                    <strong>{hit.emuName}</strong>
+                    <p className="muted">Score {hit.score.toFixed(2)}</p>
+                    <p className="snippet">{hit.snippet}</p>
+                  </div>
+                  {hit.source && <span className="badge ghost">{hit.source}</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No context retrieved yet. Mount an EMU and ask a question that needs references.</p>
+          )}
+        </div>
+        <div className="info-card">
+          <p className="eyebrow">Slash commands</p>
+          <ul className="meta-list">
+            <li>
+              <span>/emus</span>
+              <strong>List mounted + available</strong>
+            </li>
+            <li>
+              <span>/mount &lt;emu-id&gt;</span>
+              <strong>Attach an EMU for retrieval</strong>
+            </li>
+            <li>
+              <span>/unmount &lt;emu-id&gt;</span>
+              <strong>Detach an EMU</strong>
+            </li>
+            <li>
+              <span>/reset</span>
+              <strong>Clear the session</strong>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div className="emu-board">
         <div className="info-card">
           <div className="emu-card-header">
             <p className="eyebrow">Mounted EMUs</p>
@@ -367,25 +445,7 @@ const ChatPage = () => {
           {trainingStatus && <p className="muted">{trainingStatus}</p>}
           {emuError && <p className="error">{emuError}</p>}
         </div>
-        <div className="info-card">
-          <p className="eyebrow">Context preview</p>
-          {retrievals.length ? (
-            <ul className="meta-list ordered">
-              {retrievals.map((hit, index) => (
-                <li key={`${hit.emuId}-${index}`} className="emu-row">
-                  <div>
-                    <strong>{hit.emuName}</strong>
-                    <p className="muted">Score {hit.score.toFixed(2)}</p>
-                    <p className="snippet">{hit.snippet}</p>
-                  </div>
-                  {hit.source && <span className="badge ghost">{hit.source}</span>}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No context retrieved yet. Mount an EMU and ask a question that needs references.</p>
-          )}
-        </div>
+
         <div className="info-card">
           <div className="emu-card-header">
             <p className="eyebrow">Upload / version EMU</p>
