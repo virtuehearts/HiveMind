@@ -37,7 +37,11 @@ router.post('/chat', async (req, res) => {
   }
 
   try {
-    const completion = await ollama.chat(body.message);
+    await emuManager.ensureLoaded();
+    const mounted = emuManager.listMounted();
+    const context = mounted.length ? await retrieve(body.message, 4) : [];
+
+    const completion = await ollama.chat(body.message, context);
     res.json(completion);
   } catch (error) {
     console.error('Chat error', error);

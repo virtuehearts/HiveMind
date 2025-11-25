@@ -92,8 +92,10 @@ const ChatPage = () => {
       const nextDecision = await fetchRouterDecision(trimmed);
       setDecision(nextDecision);
 
+      let context: RetrievalResult[] = [];
       if (nextDecision.needsContext) {
         const { results } = await fetchRetrieval(trimmed, 4);
+        context = results;
         setRetrievals(results);
       } else {
         setRetrievals([]);
@@ -103,6 +105,12 @@ const ChatPage = () => {
       const completion: ChatCompletion = await fetchChatCompletion(trimmed);
       const reply: Message = { role: 'assistant', content: completion.reply };
       setMessages((prev) => [...prev, reply]);
+
+      if (completion.contextUsed?.length) {
+        setRetrievals(completion.contextUsed);
+      } else if (context.length) {
+        setRetrievals(context);
+      }
     } catch (err) {
       setError('Unable to reach the local router. Make sure Ollama is running with the Qwen 1.5B model.');
     } finally {
