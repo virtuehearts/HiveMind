@@ -71,9 +71,11 @@ const ChatPage = () => {
       setEmus(available);
       setMountedEmus(mounted);
       setEmuError(null);
+      return { available, mounted };
     } catch (err) {
       console.error(err);
       setEmuError('Unable to load EMUs from the backend.');
+      return { available: [], mounted: [] };
     }
   };
 
@@ -86,6 +88,9 @@ const ChatPage = () => {
     const userMessage: Message = { role: 'user', content: trimmed };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
+
+    const handled = await handleSlashCommand(trimmed);
+    if (handled) return;
 
     try {
       setStatus('routing');
@@ -167,9 +172,11 @@ const ChatPage = () => {
         setDecision({ intent: 'mount', needsContext: true, tags: response.active.tags });
       }
       setEmuError(null);
+      return response;
     } catch (err) {
       console.error(err);
       setEmuError('Unable to update EMU mount state.');
+      return null;
     } finally {
       setEmuBusy(false);
     }
@@ -197,6 +204,68 @@ const ChatPage = () => {
       setEmuError('Unable to upload EMU document.');
     } finally {
       setEmuBusy(false);
+    }
+  };
+
+  const handleSlashCommand = async (command: string) => {
+    if (!command.startsWith('/')) return false;
+
+    const [keyword, ...args] = command.split(/\s+/);
+
+    switch (keyword) {
+      case '/emus': {
+        const { available, mounted } = await refreshEmus();
+        const mountedList = mounted.length
+          ? mounted.map((emu) => `${emu.name} (${emu.id})`).join(', ')
+          : 'none mounted';
+        const availableList = available.length
+          ? available.map((emu) => `${emu.name} (${emu.tags.join(', ') || 'no tags'})`).join('; ')
+          : 'none discovered';
+        const reply = `Mounted: ${mountedList}. Available: ${availableList}.`;
+        setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+        return true;
+      }
+      case '/mount': {
+        const target = args[0];
+        if (!target) {
+          setMessages((prev) => [...prev, { role: 'assistant', content: 'Usage: /mount <emu-id>' }]);
+          return true;
+        }
+        const response = await handleMount(target, 'mount');
+        const active = response?.active;
+        if (active) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: `Mounted ${active.name} (${active.id}).`
+            }
+          ]);
+        }
+        return true;
+      }
+      case '/unmount': {
+        const target = args[0];
+        if (!target) {
+          setMessages((prev) => [...prev, { role: 'assistant', content: 'Usage: /unmount <emu-id>' }]);
+          return true;
+        }
+        const response = await handleMount(target, 'unmount');
+        if (response) {
+          setMessages((prev) => [...prev, { role: 'assistant', content: `Unmounted ${target}.` }]);
+        }
+        return true;
+      }
+      case '/reset': {
+        setMessages([{ role: 'assistant', content: 'Session reset. Ready for new prompts.' }]);
+        setDecision(null);
+        setRetrievals([]);
+        return true;
+      }
+      default: {
+        setMessages((prev) => [...prev, { role: 'assistant', content: `Unknown command: ${keyword}` }]);
+        return true;
+      }
     }
   };
 
