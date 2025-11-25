@@ -259,6 +259,45 @@ const ChatPage = () => {
         </div>
       </div>
 
+      <div className="hero-banner">
+        <div className="hero-copy">
+          <p className="eyebrow">Main interface</p>
+          <h3>Route prompts, preview context, and mount EMUs without leaving this screen.</h3>
+          <p className="muted">
+            Keep the router online, mount EMUs you want to use, and send prompts directly from the unified cockpit.
+          </p>
+          <div className="pill-row">
+            <span className="pill">/emus to list</span>
+            <span className="pill">/mount &lt;id&gt;</span>
+            <span className="pill">/reset to clear</span>
+            <span className="pill">OpenRouter fallback</span>
+          </div>
+        </div>
+        <div className="hero-summary">
+          <div className="summary-card">
+            <p className="eyebrow">Readiness</p>
+            <ul className="meta-list">
+              <li>
+                <span>Backend</span>
+                <strong>{apiBase}</strong>
+              </li>
+              <li>
+                <span>Router</span>
+                <strong>{modelStatus?.model || 'qwen2.5:1.5b (default)'}</strong>
+              </li>
+              <li>
+                <span>Model state</span>
+                <strong>{modelStatus?.available ? 'Online' : 'Offline'}</strong>
+              </li>
+              <li>
+                <span>Mounted EMUs</span>
+                <strong>{mountedEmus.length || 'None yet'}</strong>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <div className="status-strip">
         <div className="status-chip">
           <span className="eyebrow">Backend</span>

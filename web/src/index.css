@@ -92,6 +92,57 @@ a {
   gap: 20px;
 }
 
+.hero-banner {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid #1f2937;
+  background: linear-gradient(120deg, rgba(251, 191, 36, 0.08), rgba(79, 70, 229, 0.08));
+}
+
+@media (max-width: 820px) {
+  .hero-banner {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hero-copy h3 {
+  margin: 8px 0 6px;
+}
+
+.pill-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.pill {
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.hero-summary {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.summary-card {
+  width: 100%;
+  max-width: 320px;
+  background: rgba(12, 20, 37, 0.82);
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
 .panel-header {
   display: flex;
   justify-content: space-between;
