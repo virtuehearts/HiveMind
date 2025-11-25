@@ -10,6 +10,7 @@ export interface ChatCompletion {
   model: string;
   latencyMs?: number;
   tokens?: number;
+  contextUsed?: RetrievalResult[];
 }
 
 export interface EmuInfo {
