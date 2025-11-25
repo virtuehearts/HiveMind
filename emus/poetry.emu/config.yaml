@@ -1,0 +1,7 @@
+embeddingModel: all-MiniLM-L6-v2
+retriever:
+  topK: 4
+  keywordWeight: 0.25
+chunking:
+  size: 512
+  overlap: 64
