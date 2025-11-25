@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE_DIR="$ROOT_DIR/.hivemind"
+LOG_DIR="$STATE_DIR/logs"
+MODEL_NAME="qwen2.5:1.5b"
+
+mkdir -p "$LOG_DIR"
+
+OLLAMA_PID_FILE="$STATE_DIR/ollama.pid"
+SERVER_PID_FILE="$STATE_DIR/server.pid"
+WEB_PID_FILE="$STATE_DIR/web.pid"
+
+log() {
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"
+}
+
+is_running() {
+  local pid_file="$1"
+  if [[ -f "$pid_file" ]]; then
+    local pid
+    pid=$(cat "$pid_file")
+    if kill -0 "$pid" 2>/dev/null; then
+      return 0
+    else
+      rm -f "$pid_file"
+    fi
+  fi
+  return 1
+}
+
+start_background() {
+  local cmd="$1"
+  local pid_file="$2"
+  local log_file="$3"
+  if is_running "$pid_file"; then
+    log "Process already running for $pid_file (PID $(cat "$pid_file"))"
+    return 0
+  fi
+
+  log "Starting: $cmd"
+  bash -lc "$cmd" >>"$log_file" 2>&1 &
+  echo $! > "$pid_file"
+  sleep 1
+  if is_running "$pid_file"; then
+    log "Started with PID $(cat "$pid_file")"
+  else
+    log "Failed to start: $cmd (see $log_file)"
+    exit 1
+  fi
+}
+
+stop_process() {
+  local name="$1"
+  local pid_file="$2"
+  if is_running "$pid_file"; then
+    local pid
+    pid=$(cat "$pid_file")
+    log "Stopping $name (PID $pid)"
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    rm -f "$pid_file"
+  else
+    log "$name is not running"
+  fi
+}
+
+ensure_command() {
+  local cmd="$1"
+  local install_hint="$2"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    log "Missing dependency: $cmd"
+    log "$install_hint"
+    exit 1
+  fi
+}
+
+install_ollama() {
+  if command -v ollama >/dev/null 2>&1; then
+    log "Ollama already installed; skipping install script"
+  else
+    log "Installing Ollama"
+    curl -fsSL https://ollama.com/install.sh | sh
+  fi
+}
+
+pull_model() {
+  log "Ensuring model $MODEL_NAME is available"
+  if ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$MODEL_NAME"; then
+    log "Model $MODEL_NAME already present"
+  else
+    log "Pulling $MODEL_NAME"
+    ollama pull "$MODEL_NAME"
+  fi
+}
+
+start_ollama() {
+  ensure_command "ollama" "Install Ollama before continuing."
+  start_background "cd '$ROOT_DIR' && ollama serve" "$OLLAMA_PID_FILE" "$LOG_DIR/ollama.log"
+}
+
+start_server() {
+  ensure_command "npm" "Install Node.js (includes npm) before continuing."
+  start_background "cd '$ROOT_DIR' && npm run dev:server" "$SERVER_PID_FILE" "$LOG_DIR/server.log"
+}
+
+start_web() {
+  ensure_command "npm" "Install Node.js (includes npm) before continuing."
+  start_background "cd '$ROOT_DIR' && npm run dev:web" "$WEB_PID_FILE" "$LOG_DIR/web.log"
+}
+
+cmd_install() {
+  install_ollama
+  start_ollama
+  pull_model
+  start_server
+  start_web
+}
+
+cmd_start() {
+  start_ollama
+  start_server
+  start_web
+}
+
+cmd_stop() {
+  stop_process "web" "$WEB_PID_FILE"
+  stop_process "server" "$SERVER_PID_FILE"
+  stop_process "ollama" "$OLLAMA_PID_FILE"
+}
+
+cmd_status() {
+  for pair in "ollama:$OLLAMA_PID_FILE" "server:$SERVER_PID_FILE" "web:$WEB_PID_FILE"; do
+    local name="${pair%%:*}"
+    local pid_file="${pair##*:}"
+    if is_running "$pid_file"; then
+      echo "$name: running (PID $(cat "$pid_file"))"
+    else
+      echo "$name: stopped"
+    fi
+  done
+}
+
+usage() {
+  cat <<EOH
+Usage: ./HiveMind <command>
+
+Commands:
+  install   Install Ollama if needed, pull $MODEL_NAME, and start all services
+  start     Start Ollama, backend, and web UI in the background (no install/pull)
+  stop      Stop all managed services
+  status    Show the status of managed services
+  help      Show this help message
+EOH
+}
+
+main() {
+  local command="${1:-help}"
+  case "$command" in
+    install) cmd_install ;;
+    start) cmd_start ;;
+    stop) cmd_stop ;;
+    status) cmd_status ;;
+    help|--help|-h) usage ;;
+    *)
+      log "Unknown command: $command"
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
