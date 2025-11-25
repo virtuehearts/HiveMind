@@ -41,6 +41,25 @@ HiveMind is a **local-first, edge-augmented RAG protocol** that treats memory as
 7. **Verify connectivity**
    - Open the web UI and confirm the readiness cards for backend URL, router model, and EMU mounts show green.
 
+## 🐚 One-Command Operations with the `HiveMind` Script
+Use the bundled `HiveMind` shell script in the repo root to manage the full stack (Ollama, backend, and web UI). It stores PID files and logs under `.hivemind/` so you can start/stop services cleanly.
+
+```bash
+# Install Ollama if needed, pull qwen2.5:1.5b, and start everything
+./HiveMind install
+
+# Start all services (assumes dependencies are already installed)
+./HiveMind start
+
+# Check process status (ollama / server / web)
+./HiveMind status
+
+# Stop everything
+./HiveMind stop
+```
+
+Logs live in `.hivemind/logs/` for each component (Ollama, server, and web). Use `./HiveMind help` to see all available commands.
+
 ## Getting started (local router + web UI)
 1. Install [Ollama](https://ollama.com) locally and pull the lightweight router model: `ollama pull qwen2.5:1.5b`.
 2. Install workspace dependencies: `npm install` (this sets up both the backend and the Vite frontend).
