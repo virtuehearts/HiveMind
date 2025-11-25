@@ -75,12 +75,31 @@ export interface OpenRouterResponse extends ChatCompletion {
   contextUsed?: RetrievalResult[];
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+export function resolveDefaultApiBase() {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+
+  if (typeof window !== 'undefined') {
+    const { origin, hostname, protocol } = window.location;
+
+    const forwarded = origin.match(/^https?:\/\/(\d+)-(.*)$/);
+    if (forwarded) {
+      return `${protocol}//4000-${forwarded[2]}`;
+    }
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `${protocol}//${hostname}:4000`;
+    }
+  }
+
+  return 'http://localhost:4000';
+}
+
+const DEFAULT_API_BASE = resolveDefaultApiBase();
 
 function getApiBase() {
-  if (typeof localStorage === 'undefined') return API_BASE;
+  if (typeof localStorage === 'undefined') return DEFAULT_API_BASE;
   const override = localStorage.getItem('apiBaseOverride');
-  return override || API_BASE;
+  return override || DEFAULT_API_BASE;
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
