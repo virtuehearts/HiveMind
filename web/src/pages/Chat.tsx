@@ -66,7 +66,14 @@ const ChatPage = () => {
   useEffect(() => {
     fetchModelStatus()
       .then(setModelStatus)
-      .catch(() => setModelStatus(null));
+      .catch((error) => {
+        console.error('Unable to fetch model status', error);
+        setModelStatus(null);
+        pushToast(
+          `Cannot reach the backend at ${apiBase}. Start the server (npm run dev:server) and ensure Ollama is running.`,
+          'error'
+        );
+      });
     refreshEmus();
   }, []);
 
@@ -103,6 +110,21 @@ const ChatPage = () => {
     const handled = await handleSlashCommand(trimmed);
     if (handled) return;
 
+    if (modelStatus && !modelStatus.available) {
+      pushToast(
+        `Local router offline. Confirm Ollama is serving ${modelStatus.model} and that the backend is running at ${apiBase}.`,
+        'error'
+      );
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Router unavailable. Start the backend (npm run dev:server) and ensure Ollama is serving ${modelStatus.model}.`
+        }
+      ]);
+      return;
+    }
+
     try {
       setStatus('routing');
       const nextDecision = await fetchRouterDecision(trimmed);
@@ -128,7 +150,12 @@ const ChatPage = () => {
         setRetrievals(context);
       }
     } catch (err) {
-      pushToast('Unable to reach the local router. Make sure Ollama is running with the Qwen 1.5B model.', 'error');
+      console.error('Local router error', err);
+      const hint = err instanceof Error ? err.message : 'Unknown error';
+      pushToast(
+        `Unable to reach the local router at ${apiBase}: ${hint}. Ensure the backend is running and Ollama has the router model.`,
+        'error'
+      );
     } finally {
       setStatus('idle');
     }
