@@ -32,12 +32,10 @@ const ChatPage = () => {
   const [input, setInput] = useState('');
   const [decision, setDecision] = useState<RouterDecision | null>(null);
   const [status, setStatus] = useState<'idle' | 'routing' | 'chatting'>('idle');
-  const [error, setError] = useState<string | null>(null);
   const [modelStatus, setModelStatus] = useState<ModelStatus>(null);
   const [apiBase, setApiBase] = useState(import.meta.env.VITE_API_URL || 'http://localhost:4000');
   const [emus, setEmus] = useState<EmuInfo[]>([]);
   const [mountedEmus, setMountedEmus] = useState<EmuInfo[]>([]);
-  const [emuError, setEmuError] = useState<string | null>(null);
   const [, setEmuBusy] = useState(false);
   const [retrievals, setRetrievals] = useState<RetrievalResult[]>([]);
   const [openRouterBusy, setOpenRouterBusy] = useState(false);
@@ -45,6 +43,24 @@ const ChatPage = () => {
   const [openRouterEndpoint, setOpenRouterEndpoint] = useState(() =>
     loadPref('openrouterEndpoint', 'https://openrouter.ai/api/v1/chat/completions')
   );
+  const [toasts, setToasts] = useState<{ id: number; message: string; tone: 'info' | 'error' }[]>([]);
+  const [collapsedSections, setCollapsedSections] = useState({
+    decision: true,
+    context: true,
+    commands: true
+  });
+
+  const pushToast = (message: string, tone: 'info' | 'error' = 'info') => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, message, tone }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, 3800);
+  };
+
+  const toggleSection = (key: 'decision' | 'context' | 'commands') => {
+    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   useEffect(() => {
     fetchModelStatus()
@@ -67,18 +83,16 @@ const ChatPage = () => {
       const { emus: available, mounted } = await fetchEmus();
       setEmus(available);
       setMountedEmus(mounted);
-      setEmuError(null);
       return { available, mounted };
     } catch (err) {
       console.error(err);
-      setEmuError('Unable to load EMUs from the backend.');
+      pushToast('Unable to load EMUs from the backend.', 'error');
       return { available: [], mounted: [] };
     }
   };
 
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError(null);
     const trimmed = input.trim();
     if (!trimmed) return;
 
@@ -114,14 +128,13 @@ const ChatPage = () => {
         setRetrievals(context);
       }
     } catch (err) {
-      setError('Unable to reach the local router. Make sure Ollama is running with the Qwen 1.5B model.');
+      pushToast('Unable to reach the local router. Make sure Ollama is running with the Qwen 1.5B model.', 'error');
     } finally {
       setStatus('idle');
     }
   };
 
   const handleOpenRouter = async (mode: 'openrouter' | 'sota') => {
-    setError(null);
     const trimmed = input.trim();
     if (!trimmed) return;
 
@@ -152,7 +165,7 @@ const ChatPage = () => {
       }
     } catch (err) {
       console.error(err);
-      setError('Unable to reach OpenRouter or orchestrate EMU context.');
+      pushToast('Unable to reach OpenRouter or orchestrate EMU context.', 'error');
     } finally {
       setOpenRouterBusy(false);
       setStatus('idle');
@@ -168,11 +181,10 @@ const ChatPage = () => {
       if (response.active && !decision) {
         setDecision({ intent: 'mount', needsContext: true, tags: response.active.tags });
       }
-      setEmuError(null);
       return response;
     } catch (err) {
       console.error(err);
-      setEmuError('Unable to update EMU mount state.');
+      pushToast('Unable to update EMU mount state.', 'error');
       return null;
     } finally {
       setEmuBusy(false);
@@ -243,6 +255,14 @@ const ChatPage = () => {
 
   return (
     <div className="panel">
+      <div className="toast-stack">
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`toast ${toast.tone}`}>
+            {toast.message}
+          </div>
+        ))}
+      </div>
+
       <div className="panel-header">
         <div>
           <p className="eyebrow">Local-first chat</p>
@@ -317,80 +337,105 @@ const ChatPage = () => {
         </div>
       </div>
 
-      {(error || emuError) && (
-        <div className="info-card warn">
-          {error && <p className="error">{error}</p>}
-          {emuError && <p className="error">{emuError}</p>}
-        </div>
-      )}
-
       <div className="chat-window">
         {messages.map((message, index) => (
           <MessageBubble key={index} role={message.role} content={message.content} />
         ))}
       </div>
 
-      <div className="info-grid compact">
-        <div className="info-card">
-          <p className="eyebrow">Router decision</p>
-          {decision ? (
-            <ul className="meta-list">
-              <li>
-                <span>Intent</span>
-                <strong>{decision.intent}</strong>
-              </li>
-              <li>
-                <span>Needs context</span>
-                <strong>{decision.needsContext ? 'Yes' : 'No'}</strong>
-              </li>
-              <li>
-                <span>Tags</span>
-                <strong>{decision.tags.join(', ') || 'none'}</strong>
-              </li>
-            </ul>
-          ) : (
-            <p className="muted">Send a message to see router intent and tags.</p>
+      <div className="collapsible-stack">
+        <div className={`collapse-card ${collapsedSections.decision ? 'collapsed' : ''}`}>
+          <button className="collapse-toggle" type="button" onClick={() => toggleSection('decision')}>
+            <div>
+              <p className="eyebrow">Router decision</p>
+              <strong>Intent, context need, and tags</strong>
+            </div>
+            <span className="chevron">{collapsedSections.decision ? '⌄' : '⌃'}</span>
+          </button>
+          {!collapsedSections.decision && (
+            <div className="collapse-body">
+              {decision ? (
+                <ul className="meta-list">
+                  <li>
+                    <span>Intent</span>
+                    <strong>{decision.intent}</strong>
+                  </li>
+                  <li>
+                    <span>Needs context</span>
+                    <strong>{decision.needsContext ? 'Yes' : 'No'}</strong>
+                  </li>
+                  <li>
+                    <span>Tags</span>
+                    <strong>{decision.tags.join(', ') || 'none'}</strong>
+                  </li>
+                </ul>
+              ) : (
+                <p className="muted">Send a message to see router intent and tags.</p>
+              )}
+            </div>
           )}
         </div>
-        <div className="info-card">
-          <p className="eyebrow">Context preview</p>
-          {retrievals.length ? (
-            <ul className="meta-list ordered">
-              {retrievals.map((hit, index) => (
-                <li key={`${hit.emuId}-${index}`} className="emu-row">
-                  <div>
-                    <strong>{hit.emuName}</strong>
-                    <p className="muted">Score {hit.score.toFixed(2)}</p>
-                    <p className="snippet">{hit.snippet}</p>
-                  </div>
-                  {hit.source && <span className="badge ghost">{hit.source}</span>}
+
+        <div className={`collapse-card ${collapsedSections.context ? 'collapsed' : ''}`}>
+          <button className="collapse-toggle" type="button" onClick={() => toggleSection('context')}>
+            <div>
+              <p className="eyebrow">Context preview</p>
+              <strong>What the EMUs returned</strong>
+            </div>
+            <span className="chevron">{collapsedSections.context ? '⌄' : '⌃'}</span>
+          </button>
+          {!collapsedSections.context && (
+            <div className="collapse-body">
+              {retrievals.length ? (
+                <ul className="meta-list ordered">
+                  {retrievals.map((hit, index) => (
+                    <li key={`${hit.emuId}-${index}`} className="emu-row">
+                      <div>
+                        <strong>{hit.emuName}</strong>
+                        <p className="muted">Score {hit.score.toFixed(2)}</p>
+                        <p className="snippet">{hit.snippet}</p>
+                      </div>
+                      {hit.source && <span className="badge ghost">{hit.source}</span>}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">Mount an EMU in Preferences to see context here.</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className={`collapse-card ${collapsedSections.commands ? 'collapsed' : ''}`}>
+          <button className="collapse-toggle" type="button" onClick={() => toggleSection('commands')}>
+            <div>
+              <p className="eyebrow">Slash commands</p>
+              <strong>Quick actions that work anywhere</strong>
+            </div>
+            <span className="chevron">{collapsedSections.commands ? '⌄' : '⌃'}</span>
+          </button>
+          {!collapsedSections.commands && (
+            <div className="collapse-body">
+              <ul className="meta-list">
+                <li>
+                  <span>/emus</span>
+                  <strong>List mounted + available</strong>
                 </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">Mount an EMU in Preferences to see context here.</p>
+                <li>
+                  <span>/mount &lt;emu-id&gt;</span>
+                  <strong>Attach an EMU</strong>
+                </li>
+                <li>
+                  <span>/unmount &lt;emu-id&gt;</span>
+                  <strong>Detach an EMU</strong>
+                </li>
+                <li>
+                  <span>/reset</span>
+                  <strong>Clear the session</strong>
+                </li>
+              </ul>
+            </div>
           )}
-        </div>
-        <div className="info-card">
-          <p className="eyebrow">Slash commands</p>
-          <ul className="meta-list">
-            <li>
-              <span>/emus</span>
-              <strong>List mounted + available</strong>
-            </li>
-            <li>
-              <span>/mount &lt;emu-id&gt;</span>
-              <strong>Attach an EMU</strong>
-            </li>
-            <li>
-              <span>/unmount &lt;emu-id&gt;</span>
-              <strong>Detach an EMU</strong>
-            </li>
-            <li>
-              <span>/reset</span>
-              <strong>Clear the session</strong>
-            </li>
-          </ul>
         </div>
       </div>
 

@@ -472,6 +472,89 @@ a {
   font-size: 12px;
 }
 
+.collapsible-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.collapse-card {
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.collapse-toggle {
+  width: 100%;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.collapse-toggle strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.chevron {
+  font-size: 16px;
+  opacity: 0.8;
+}
+
+.collapse-body {
+  border-top: 1px solid #1f2937;
+  padding: 12px 14px 14px;
+  background: rgba(12, 20, 37, 0.8);
+}
+
+.toast-stack {
+  position: fixed;
+  top: 22px;
+  right: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 20;
+}
+
+.toast {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 20, 37, 0.9);
+  color: #e2e8f0;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
+  animation: slideIn 0.2s ease-out;
+}
+
+.toast.info {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.toast.error {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fecdd3;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 @media (max-width: 720px) {
   .panel-header {
     flex-direction: column;
