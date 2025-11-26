@@ -1,5 +1,7 @@
 import cors from 'cors';
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import router from './routes/router';
 import { config } from './config';
 import emuRoutes from './routes/emu';
@@ -22,6 +24,21 @@ app.get('/health', (_req, res) => {
 app.use('/api', router);
 app.use('/api', emuRoutes);
 app.use('/api', retrieverRoutes);
+
+const webRoot = path.resolve(__dirname, '..', '..', 'web', 'dist');
+
+if (fs.existsSync(webRoot)) {
+  app.use(express.static(webRoot));
+
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api')) {
+      res.status(404).json({ error: 'Route not found' });
+      return;
+    }
+
+    res.sendFile(path.join(webRoot, 'index.html'));
+  });
+}
 
 app.listen(config.port, () => {
   console.log(`HiveMind backend listening on port ${config.port}`);
