@@ -6,7 +6,7 @@ dotenv.config();
 export const config = {
   port: Number(process.env.PORT) || 4000,
   ollamaHost: process.env.OLLAMA_HOST || 'http://localhost:11434',
-  routerModel: process.env.OLLAMA_ROUTER_MODEL || 'archqwen2:1.5b-instruct-q4_K_M',
+  routerModel: process.env.OLLAMA_ROUTER_MODEL || 'qwen2.5:1.5b-instruct',
   allowOrigins:
     process.env.CORS_ORIGINS?.split(',')
       .map((origin) => origin.trim())
