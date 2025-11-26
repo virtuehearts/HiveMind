@@ -12,7 +12,11 @@ const openRouter = new OpenRouterClient();
 
 router.get('/model', async (_req, res) => {
   const available = await ollama.checkModelAvailability(config.routerModel);
-  res.json({ model: config.routerModel, available });
+  res.json({
+    model: config.routerModel,
+    available,
+    openRouterFallback: openRouter.hasApiKey()
+  });
 });
 
 router.post('/route', async (req, res) => {
@@ -44,16 +48,26 @@ router.post('/chat', async (req, res) => {
   }
 
   try {
-    const available = await ollama.checkModelAvailability(config.routerModel);
-    if (!available) {
-      return res.status(503).json({
-        error: 'Router model not available',
-        hint: `Pull it with: ollama pull ${config.routerModel}`
-      });
-    }
     await emuManager.ensureLoaded();
     const mounted = emuManager.listMounted();
     const context = mounted.length ? await retrieve(body.message, 4) : [];
+
+    const available = await ollama.checkModelAvailability(config.routerModel);
+    if (!available) {
+      if (openRouter.hasApiKey()) {
+        const completion = await openRouter.chatWithContext(body.message, context);
+        return res.json({
+          ...completion,
+          provider: 'openrouter',
+          routerModelAvailable: false
+        });
+      }
+
+      return res.status(503).json({
+        error: 'Router model not available',
+        hint: `Pull it with: ollama pull ${config.routerModel} or set OPENROUTER_API_KEY for remote fallback.`
+      });
+    }
 
     const completion = await ollama.chat(body.message, context);
     res.json(completion);
