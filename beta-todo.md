@@ -8,7 +8,7 @@ Progress tracker for getting the HiveMind chat running locally with EMUs per the
 
 ## To-Do
 - [ ] Install prerequisites: Node.js (18+), npm, and [Ollama](https://ollama.com) with GPU/CPU support as available.
-- [ ] Pull the local router SLM: `ollama pull archqwen2:1.5b-instruct-q4_K_M` (or Phi-3.5 equivalent) to enable intent routing.
+- [ ] Pull the local router SLM: `ollama pull qwen2.5:1.5b-instruct` (or Phi-3.5 equivalent) to enable intent routing.
 - [ ] Install project dependencies: `npm install` (bootstraps backend and Vite frontend packages).
 - [ ] Configure environment (e.g., `.env` or config) with any API keys for cloud LLM fallback and ports (server: 4000, web: 5173 by default).
 - [ ] Start the backend router/dev server: `npm run dev:server` and verify `http://localhost:4000` responds.
