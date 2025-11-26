@@ -90,7 +90,7 @@ export async function retrieve(query: string, topK?: number): Promise<RetrievalR
   const scored: RetrievalResult[] = [];
 
   const configuredTopK = mounted.reduce((max, emu) => Math.max(max, emu.config?.retriever?.topK ?? 0), 0);
-  const limit = topK ?? configuredTopK || 5;
+  const limit = topK ?? (configuredTopK || 5);
 
   for (const emu of mounted) {
     const chunkSize = emu.config?.chunking?.size;

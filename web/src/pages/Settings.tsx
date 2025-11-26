@@ -171,7 +171,7 @@ const SettingsPage = () => {
           <ul className="meta-list">
             <li>
               <span>Model</span>
-              <strong>{modelStatus?.model || 'qwen2.5:1.5b (default)'}</strong>
+              <strong>{modelStatus?.model || 'archqwen2:1.5b-instruct-q4_K_M (default)'}</strong>
             </li>
             <li>
               <span>Available</span>
@@ -196,7 +196,7 @@ const SettingsPage = () => {
           <p className="eyebrow">Command line + router tips</p>
           <ol className="meta-list ordered">
             <li>Install Ollama and keep the daemon running.</li>
-            <li>Pull the router: <code>ollama pull qwen2.5:1.5b</code></li>
+            <li>Pull the router: <code>ollama pull archqwen2:1.5b-instruct-q4_K_M</code></li>
             <li>Start backend: <code>npm run dev:server</code></li>
             <li>Start UI: <code>npm run dev:web</code></li>
             <li>Use slash commands in chat: /emus, /mount &lt;id&gt;, /unmount &lt;id&gt;, /reset.</li>

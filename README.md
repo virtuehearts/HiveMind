@@ -25,10 +25,11 @@ HiveMind is a **local-first, edge-augmented RAG protocol** that treats memory as
    ```bash
    npm install
    ```
-4. **Download the router model**
+4. **Download the router model (8GB-friendly)**
    ```bash
    curl -fsSL https://ollama.com/install.sh | sh
-   ollama pull qwen2.5:1.5b
+   # Smallest default: 1.54B parameters, Q4_K_M quantization
+   ollama pull archqwen2:1.5b-instruct-q4_K_M
    ```
 5. **Start the backend** (API on http://localhost:4000)
    ```bash
@@ -45,7 +46,7 @@ HiveMind is a **local-first, edge-augmented RAG protocol** that treats memory as
 Use the bundled `HiveMind` shell script in the repo root to manage the full stack (Ollama, backend, and web UI). It stores PID files and logs under `.hivemind/` so you can start/stop services cleanly.
 
 ```bash
-# Install Ollama if needed, pull qwen2.5:1.5b, and start everything
+# Install Ollama if needed, pull archqwen2:1.5b-instruct-q4_K_M, and start everything
 ./HiveMind install
 
 # Start all services (assumes dependencies are already installed)
@@ -61,16 +62,16 @@ Use the bundled `HiveMind` shell script in the repo root to manage the full stac
 Logs live in `.hivemind/logs/` for each component (Ollama, server, and web). Use `./HiveMind help` to see all available commands.
 
 ## Getting started (local router + web UI)
-1. Install [Ollama](https://ollama.com) locally and pull the lightweight router model: `ollama pull qwen2.5:1.5b`.
+1. Install [Ollama](https://ollama.com) locally and pull the lightweight router model: `ollama pull archqwen2:1.5b-instruct-q4_K_M`.
 2. Install workspace dependencies: `npm install` (this sets up both the backend and the Vite frontend).
 3. Run the backend: `npm run dev:server` (default: http://localhost:4000).
 4. In a new terminal, run the frontend: `npm run dev:web` (default: http://localhost:5173).
 
-The frontend uses the backend router endpoints (`/api/route` and `/api/chat`) to exercise the local Qwen 1.5B model before the rest of the RAG stack is added.
+The frontend uses the backend router endpoints (`/api/route` and `/api/chat`) to exercise the local ArchQwen2 1.5B Q4_K_M router before the rest of the RAG stack is added. The quantized default keeps RAM use low enough for 8GB laptops while still enabling routing and chat.
 
 
 It is designed to run on:
-✅ **Consumer CPUs (16GB RAM)**
+✅ **Consumer CPUs (8–16GB RAM)** — ArchQwen2 1.5B Q4_K_M stays under ~4GB RAM
 ✅ **NVIDIA RTX GPUs (6GB VRAM)**
 while delivering **40–50 tokens/sec** using quantized SLMs.
 
