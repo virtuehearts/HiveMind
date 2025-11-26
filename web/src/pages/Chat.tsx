@@ -330,7 +330,7 @@ const ChatPage = () => {
               </li>
               <li>
                 <span>Router</span>
-                <strong>{modelStatus?.model || 'qwen2.5:1.5b (default)'}</strong>
+                <strong>{modelStatus?.model || 'archqwen2:1.5b-instruct-q4_K_M (default)'}</strong>
               </li>
               <li>
                 <span>Model state</span>
@@ -352,7 +352,7 @@ const ChatPage = () => {
         </div>
         <div className="status-chip">
           <span className="eyebrow">Router</span>
-          <strong>{modelStatus?.model || 'qwen2.5:1.5b (default)'}</strong>
+          <strong>{modelStatus?.model || 'archqwen2:1.5b-instruct-q4_K_M (default)'}</strong>
         </div>
         <div className="status-chip">
           <span className="eyebrow">EMUs</span>

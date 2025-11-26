@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE_DIR="$ROOT_DIR/.hivemind"
 LOG_DIR="$STATE_DIR/logs"
-MODEL_NAME="qwen2.5:1.5b"
+MODEL_NAME="${OLLAMA_ROUTER_MODEL:-archqwen2:1.5b-instruct-q4_K_M}"
 
 mkdir -p "$LOG_DIR"
 
