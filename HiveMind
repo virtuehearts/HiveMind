@@ -11,6 +11,7 @@ mkdir -p "$LOG_DIR"
 OLLAMA_PID_FILE="$STATE_DIR/ollama.pid"
 SERVER_PID_FILE="$STATE_DIR/server.pid"
 WEB_PID_FILE="$STATE_DIR/web.pid"
+NODE_DEPS_FLAG="$STATE_DIR/node_deps_installed"
 
 log() {
   echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"
@@ -100,6 +101,19 @@ start_ollama() {
   start_background "cd '$ROOT_DIR' && ollama serve" "$OLLAMA_PID_FILE" "$LOG_DIR/ollama.log"
 }
 
+install_node_dependencies() {
+  ensure_command "npm" "Install Node.js (includes npm) before continuing."
+
+  if [[ -f "$NODE_DEPS_FLAG" && -d "$ROOT_DIR/node_modules" && "$NODE_DEPS_FLAG" -nt "$ROOT_DIR/package-lock.json" ]]; then
+    log "Node.js dependencies already installed; skipping"
+    return
+  fi
+
+  log "Installing Node.js dependencies"
+  (cd "$ROOT_DIR" && npm install)
+  touch "$NODE_DEPS_FLAG"
+}
+
 start_server() {
   ensure_command "npm" "Install Node.js (includes npm) before continuing."
   start_background "cd '$ROOT_DIR' && npm run dev:server" "$SERVER_PID_FILE" "$LOG_DIR/server.log"
@@ -114,12 +128,14 @@ cmd_install() {
   install_ollama
   start_ollama
   pull_model
+  install_node_dependencies
   start_server
   start_web
 }
 
 cmd_start() {
   start_ollama
+  install_node_dependencies
   start_server
   start_web
 }
