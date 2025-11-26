@@ -13,6 +13,10 @@ export class OpenRouterClient {
     private readonly defaultModel: string = config.openRouterModel
   ) {}
 
+  hasApiKey(): boolean {
+    return Boolean(this.apiKey);
+  }
+
   private ensureKey() {
     if (!this.apiKey) {
       throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY.');
