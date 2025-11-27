@@ -3,10 +3,15 @@ import MessageBubble from '../components/MessageBubble';
 import {
   ChatCompletion,
   ConversationTurn,
+  MemoryBlock,
+  MemoryStatus,
   RouterDecision,
   fetchChatCompletion,
+  fetchMemoryBlocks,
+  fetchMemoryStatus,
   fetchModelStatus,
   fetchRouterDecision,
+  createMemoryBlock,
   resolveDefaultApiBase
 } from '../api/client';
 
@@ -27,6 +32,11 @@ const ChatPage = () => {
   const [apiBase] = useState(resolveDefaultApiBase());
   const [decision, setDecision] = useState<DecisionSnapshot | null>(null);
   const [conversationPreview, setConversationPreview] = useState<ConversationTurn[]>([]);
+  const [memoryBlocks, setMemoryBlocks] = useState<MemoryBlock[]>([]);
+  const [memoryStatus, setMemoryStatus] = useState<MemoryStatus | null>(null);
+  const [memoryDraft, setMemoryDraft] = useState('');
+  const [memoryTitle, setMemoryTitle] = useState('');
+  const [memoryBusy, setMemoryBusy] = useState(false);
 
   const [sessionId, setSessionId] = useState(() => {
     if (typeof localStorage === 'undefined') return makeSessionId();
@@ -57,11 +67,31 @@ const ChatPage = () => {
       });
   }, []);
 
+  useEffect(() => {
+    const loadMemoryLayer = async () => {
+      try {
+        const [status, blocks] = await Promise.all([fetchMemoryStatus(), fetchMemoryBlocks()]);
+        setMemoryStatus(status);
+        setMemoryBlocks(blocks);
+      } catch (error) {
+        console.warn('Memory layer unavailable', error);
+      }
+    };
+
+    loadMemoryLayer();
+  }, []);
+
   const statusLabel = useMemo(() => {
     if (status === 'routing') return 'Classifying intent…';
     if (status === 'chatting') return 'Responding…';
     return 'Idle';
   }, [status]);
+
+  const formatTimestamp = (iso?: string | null) => {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    return date.toLocaleString();
+  };
 
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -106,6 +136,31 @@ const ChatPage = () => {
       ]);
     } finally {
       setStatus('idle');
+    }
+  };
+
+  const handleMemorySave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const content = memoryDraft.trim();
+    if (!content || memoryBusy) return;
+
+    setMemoryBusy(true);
+    try {
+      const block = await createMemoryBlock({
+        title: memoryTitle.trim() || undefined,
+        content,
+        tags: decision?.tags
+      });
+
+      setMemoryBlocks((prev) => [block, ...prev]);
+      const status = await fetchMemoryStatus();
+      setMemoryStatus(status);
+      setMemoryDraft('');
+      setMemoryTitle('');
+    } catch (error) {
+      console.error('Unable to persist memory block', error);
+    } finally {
+      setMemoryBusy(false);
     }
   };
 
@@ -206,6 +261,90 @@ const ChatPage = () => {
               </ul>
             ) : (
               <p className="muted">Conversation history will appear here as it is reused.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="collapse-card">
+          <div className="collapse-body memory-card">
+            <div className="emu-card-header">
+              <div>
+                <p className="eyebrow">EMU memory layer</p>
+                <h3>Personal memories</h3>
+                <p className="muted">Save private snippets into local EMU blocks with automatic intent + tags.</p>
+              </div>
+              <div className="status">
+                <span className="badge ghost">
+                  {memoryStatus ? `${memoryStatus.totalBlocks} blocks` : 'Memory offline'}
+                </span>
+                {memoryStatus?.lastUpdated && (
+                  <span className="badge ghost small">Updated {formatTimestamp(memoryStatus.lastUpdated)}</span>
+                )}
+              </div>
+            </div>
+
+            <form className="memory-input" onSubmit={handleMemorySave}>
+              <input
+                placeholder="Memory title (optional)"
+                value={memoryTitle}
+                onChange={(event) => setMemoryTitle(event.target.value)}
+              />
+              <textarea
+                placeholder="Add a personal memory block – routines, preferences, schedules, or context you want to keep local."
+                value={memoryDraft}
+                onChange={(event) => setMemoryDraft(event.target.value)}
+              />
+              <div className="emu-actions">
+                <button type="submit" disabled={memoryBusy || !memoryDraft.trim()}>
+                  {memoryBusy ? 'Saving…' : 'Save to EMU memory'}
+                </button>
+                <span className="muted small">Intent and tags are indexed locally; router chat stays untouched.</span>
+              </div>
+            </form>
+
+            <div className="status-strip memory-status">
+              <div className="status-chip">
+                <span className="eyebrow">Storage</span>
+                <strong>{memoryStatus?.storagePath || 'local disk'}</strong>
+              </div>
+              <div className="status-chip">
+                <span className="eyebrow">Intents</span>
+                <strong>
+                  {memoryStatus?.intents?.length
+                    ? memoryStatus.intents.map((entry) => `${entry.intent} (${entry.count})`).join(' • ')
+                    : 'No index yet'}
+                </strong>
+              </div>
+              <div className="status-chip">
+                <span className="eyebrow">Top tags</span>
+                <strong>{memoryStatus?.topTags?.length ? memoryStatus.topTags.join(', ') : 'Pending'}</strong>
+              </div>
+            </div>
+
+            {memoryBlocks.length ? (
+              <ul className="emu-list">
+                {memoryBlocks.map((block) => (
+                  <li key={block.id} className="emu-row">
+                    <div>
+                      <strong>{block.title}</strong>
+                      <p className="snippet">{block.summary}</p>
+                      <div className="tag-row">
+                        <span className="tag-pill">{block.intent}</span>
+                        {block.tags.map((tag) => (
+                          <span key={`${block.id}-${tag}`} className="tag-pill">
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="meta-list small">
+                      <span className="muted">{formatTimestamp(block.createdAt)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">No personal memories stored yet. Add one to test the EMU block index.</p>
             )}
           </div>
         </div>

@@ -555,6 +555,37 @@ a {
   }
 }
 
+.memory-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.memory-input {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memory-input input,
+.memory-input textarea {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #1f2937;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+}
+
+.memory-input textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.memory-status .status-chip strong {
+  word-break: break-word;
+}
+
 @media (max-width: 720px) {
   .panel-header {
     flex-direction: column;

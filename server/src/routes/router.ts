@@ -1,14 +1,39 @@
 import { Router } from 'express';
 import { config } from '../config';
+import { EmuMemoryLayer } from '../services/emuMemoryLayer';
 import { OllamaClient } from '../services/ollamaClient';
-import { RouterRequestBody } from '../types';
+import { NewMemoryBlockPayload, RouterRequestBody } from '../types';
 
 const router = Router();
 const ollama = new OllamaClient();
+const memoryLayer = new EmuMemoryLayer();
 
 router.get('/model', async (_req, res) => {
   const available = await ollama.checkModelAvailability(config.routerModel);
   res.json({ model: config.routerModel, available });
+});
+
+router.get('/memory/status', (_req, res) => {
+  res.json(memoryLayer.getStatus());
+});
+
+router.get('/memory/blocks', (_req, res) => {
+  res.json(memoryLayer.listBlocks());
+});
+
+router.post('/memory/blocks', (req, res) => {
+  const payload = req.body as NewMemoryBlockPayload;
+  if (!payload?.content) {
+    return res.status(400).json({ error: 'Memory content is required' });
+  }
+
+  try {
+    const stored = memoryLayer.addBlock(payload);
+    res.json(stored);
+  } catch (error) {
+    console.error('Unable to store memory block', error);
+    res.status(500).json({ error: 'Failed to store memory block' });
+  }
 });
 
 router.post('/route', async (req, res) => {
