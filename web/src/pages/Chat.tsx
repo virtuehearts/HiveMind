@@ -1,66 +1,51 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import MessageBubble from '../components/MessageBubble';
 import {
   ChatCompletion,
-  EmuInfo,
-  EmuMountResponse,
+  ConversationTurn,
   RouterDecision,
-  RetrievalResult,
   fetchChatCompletion,
-  fetchEmus,
   fetchModelStatus,
-  fetchOpenRouterChat,
   fetchRouterDecision,
-  fetchRetrieval,
-  mountEmu,
-  resolveDefaultApiBase,
-  unmountEmu
+  resolveDefaultApiBase
 } from '../api/client';
 
-type Message = { role: 'user' | 'assistant'; content: string };
+const makeSessionId = () => Math.random().toString(36).slice(2, 10);
 
+type Message = { role: 'user' | 'assistant'; content: string };
 type ModelStatus = { model: string; available: boolean } | null;
 
-const loadPref = (key: string, fallback: string) => {
-  if (typeof localStorage === 'undefined') return fallback;
-  return localStorage.getItem(key) || fallback;
-};
+type DecisionSnapshot = RouterDecision & { timestamp: number };
 
 const ChatPage = () => {
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: 'Hi! I am the local HiveMind router using Qwen 1.5B.' }
+    { role: 'assistant', content: 'Local HiveMind is ready. Send a prompt to start chatting.' }
   ]);
   const [input, setInput] = useState('');
-  const [decision, setDecision] = useState<RouterDecision | null>(null);
   const [status, setStatus] = useState<'idle' | 'routing' | 'chatting'>('idle');
   const [modelStatus, setModelStatus] = useState<ModelStatus>(null);
-  const [apiBase, setApiBase] = useState(resolveDefaultApiBase());
-  const [emus, setEmus] = useState<EmuInfo[]>([]);
-  const [mountedEmus, setMountedEmus] = useState<EmuInfo[]>([]);
-  const [, setEmuBusy] = useState(false);
-  const [retrievals, setRetrievals] = useState<RetrievalResult[]>([]);
-  const [openRouterBusy, setOpenRouterBusy] = useState(false);
-  const [openRouterModel, setOpenRouterModel] = useState(() => loadPref('openrouterModel', 'openai/gpt-4o-mini'));
-  const [openRouterEndpoint, setOpenRouterEndpoint] = useState(() =>
-    loadPref('openrouterEndpoint', 'https://openrouter.ai/api/v1/chat/completions')
-  );
-  const [toasts, setToasts] = useState<{ id: number; message: string; tone: 'info' | 'error' }[]>([]);
-  const [collapsedSections, setCollapsedSections] = useState({
-    decision: true,
-    context: true,
-    commands: true
+  const [apiBase] = useState(resolveDefaultApiBase());
+  const [decision, setDecision] = useState<DecisionSnapshot | null>(null);
+  const [conversationPreview, setConversationPreview] = useState<ConversationTurn[]>([]);
+
+  const [sessionId, setSessionId] = useState(() => {
+    if (typeof localStorage === 'undefined') return makeSessionId();
+    const existing = localStorage.getItem('hivemindSessionId');
+    if (existing) return existing;
+    const next = makeSessionId();
+    localStorage.setItem('hivemindSessionId', next);
+    return next;
   });
 
-  const pushToast = (message: string, tone: 'info' | 'error' = 'info') => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, tone }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((toast) => toast.id !== id));
-    }, 3800);
-  };
-
-  const toggleSection = (key: 'decision' | 'context' | 'commands') => {
-    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  const regenerateSession = () => {
+    const next = makeSessionId();
+    setSessionId(next);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('hivemindSessionId', next);
+    }
+    setMessages([{ role: 'assistant', content: 'Session reset. Start a new local chat.' }]);
+    setDecision(null);
+    setConversationPreview([]);
   };
 
   useEffect(() => {
@@ -69,34 +54,14 @@ const ChatPage = () => {
       .catch((error) => {
         console.error('Unable to fetch model status', error);
         setModelStatus(null);
-        pushToast(
-          `Cannot reach the backend at ${apiBase}. Start the server (npm run dev:server) and ensure Ollama is running.`,
-          'error'
-        );
       });
-    refreshEmus();
   }, []);
 
-  useEffect(() => {
-    setOpenRouterModel(loadPref('openrouterModel', 'openai/gpt-4o-mini'));
-    setOpenRouterEndpoint(loadPref('openrouterEndpoint', 'https://openrouter.ai/api/v1/chat/completions'));
-    if (typeof localStorage === 'undefined') return;
-    const override = localStorage.getItem('apiBaseOverride');
-    if (override) setApiBase(override);
-  }, []);
-
-  const refreshEmus = async () => {
-    try {
-      const { emus: available, mounted } = await fetchEmus();
-      setEmus(available);
-      setMountedEmus(mounted);
-      return { available, mounted };
-    } catch (err) {
-      console.error(err);
-      pushToast('Unable to load EMUs from the backend.', 'error');
-      return { available: [], mounted: [] };
-    }
-  };
+  const statusLabel = useMemo(() => {
+    if (status === 'routing') return 'Classifying intent…';
+    if (status === 'chatting') return 'Responding…';
+    return 'Idle';
+  }, [status]);
 
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -107,196 +72,50 @@ const ChatPage = () => {
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
 
-    const handled = await handleSlashCommand(trimmed);
-    if (handled) return;
-
     if (modelStatus && !modelStatus.available) {
-      pushToast(
-        `Local router offline. Confirm Ollama is serving ${modelStatus.model} and that the backend is running at ${apiBase}.`,
-        'error'
-      );
       setMessages((prev) => [
         ...prev,
-        {
-          role: 'assistant',
-          content: `Router unavailable. Start the backend (npm run dev:server) and ensure Ollama is serving ${modelStatus.model}.`
-        }
+        { role: 'assistant', content: `Router unavailable. Start the backend and pull ${modelStatus.model}.` }
       ]);
       return;
     }
 
     try {
       setStatus('routing');
-      const nextDecision = await fetchRouterDecision(trimmed);
-      setDecision(nextDecision);
-
-      let context: RetrievalResult[] = [];
-      if (nextDecision.needsContext) {
-        const { results } = await fetchRetrieval(trimmed, 4);
-        context = results;
-        setRetrievals(results);
-      } else {
-        setRetrievals([]);
-      }
+      const nextDecision = await fetchRouterDecision(trimmed, sessionId);
+      const enrichedDecision: DecisionSnapshot = { ...nextDecision, timestamp: Date.now() };
+      setDecision(enrichedDecision);
 
       setStatus('chatting');
-      const completion: ChatCompletion = await fetchChatCompletion(trimmed);
+      const completion: ChatCompletion = await fetchChatCompletion(
+        trimmed,
+        sessionId,
+        nextDecision.transformedQuery || undefined
+      );
       const reply: Message = { role: 'assistant', content: completion.reply };
       setMessages((prev) => [...prev, reply]);
-
-      if (completion.contextUsed?.length) {
-        setRetrievals(completion.contextUsed);
-      } else if (context.length) {
-        setRetrievals(context);
-      }
+      setConversationPreview(completion.contextUsed || []);
     } catch (err) {
       console.error('Local router error', err);
-      const hint = err instanceof Error ? err.message : 'Unknown error';
-      pushToast(
-        `Unable to reach the local router at ${apiBase}: ${hint}. Ensure the backend is running and Ollama has the router model.`,
-        'error'
-      );
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `Unable to reach the local router at ${apiBase}. Ensure the server is running and Ollama is serving the model.`
+        }
+      ]);
     } finally {
       setStatus('idle');
-    }
-  };
-
-  const handleOpenRouter = async (mode: 'openrouter' | 'sota') => {
-    const trimmed = input.trim();
-    if (!trimmed) return;
-
-    const userMessage: Message = { role: 'user', content: trimmed };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput('');
-
-    try {
-      setStatus('routing');
-      const nextDecision = await fetchRouterDecision(trimmed);
-      setDecision(nextDecision);
-      const { results } = await fetchRetrieval(trimmed, 6);
-      setRetrievals(results);
-
-      setOpenRouterBusy(true);
-      setStatus('chatting');
-      const completion = await fetchOpenRouterChat(trimmed, openRouterModel, openRouterEndpoint);
-      const reply: Message = {
-        role: 'assistant',
-        content:
-          mode === 'sota'
-            ? `SOTA (OpenRouter ${completion.model}): ${completion.reply}`
-            : `OpenRouter (${completion.model}): ${completion.reply}`
-      };
-      setMessages((prev) => [...prev, reply]);
-      if (completion.contextUsed) {
-        setRetrievals(completion.contextUsed);
-      }
-    } catch (err) {
-      console.error(err);
-      pushToast('Unable to reach OpenRouter or orchestrate EMU context.', 'error');
-    } finally {
-      setOpenRouterBusy(false);
-      setStatus('idle');
-    }
-  };
-
-  const handleMount = async (emuId: string, action: 'mount' | 'unmount') => {
-    try {
-      setEmuBusy(true);
-      const response: EmuMountResponse =
-        action === 'mount' ? await mountEmu(emuId) : await unmountEmu(emuId);
-      setMountedEmus(response.mounted);
-      if (response.active && !decision) {
-        setDecision({ intent: 'mount', needsContext: true, tags: response.active.tags });
-      }
-      return response;
-    } catch (err) {
-      console.error(err);
-      pushToast('Unable to update EMU mount state.', 'error');
-      return null;
-    } finally {
-      setEmuBusy(false);
-    }
-  };
-
-  const handleSlashCommand = async (command: string) => {
-    if (!command.startsWith('/')) return false;
-
-    const [keyword, ...args] = command.split(/\s+/);
-
-    switch (keyword) {
-      case '/emus': {
-        const { available, mounted } = await refreshEmus();
-        const mountedList = mounted.length
-          ? mounted.map((emu) => `${emu.name} (${emu.id})`).join(', ')
-          : 'none mounted';
-        const availableList = available.length
-          ? available.map((emu) => `${emu.name} (${emu.tags.join(', ') || 'no tags'})`).join('; ')
-          : 'none discovered';
-        const reply = `Mounted: ${mountedList}. Available: ${availableList}.`;
-        setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
-        return true;
-      }
-      case '/mount': {
-        const target = args[0];
-        if (!target) {
-          setMessages((prev) => [...prev, { role: 'assistant', content: 'Usage: /mount <emu-id>' }]);
-          return true;
-        }
-        const response = await handleMount(target, 'mount');
-        const active = response?.active;
-        if (active) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'assistant',
-              content: `Mounted ${active.name} (${active.id}).`
-            }
-          ]);
-        }
-        return true;
-      }
-      case '/unmount': {
-        const target = args[0];
-        if (!target) {
-          setMessages((prev) => [...prev, { role: 'assistant', content: 'Usage: /unmount <emu-id>' }]);
-          return true;
-        }
-        const response = await handleMount(target, 'unmount');
-        if (response) {
-          setMessages((prev) => [...prev, { role: 'assistant', content: `Unmounted ${target}.` }]);
-        }
-        return true;
-      }
-      case '/reset': {
-        setMessages([{ role: 'assistant', content: 'Session reset. Ready for new prompts.' }]);
-        setDecision(null);
-        setRetrievals([]);
-        return true;
-      }
-      default: {
-        setMessages((prev) => [...prev, { role: 'assistant', content: `Unknown command: ${keyword}` }]);
-        return true;
-      }
     }
   };
 
   return (
     <div className="panel">
-      <div className="toast-stack">
-        {toasts.map((toast) => (
-          <div key={toast.id} className={`toast ${toast.tone}`}>
-            {toast.message}
-          </div>
-        ))}
-      </div>
-
       <div className="panel-header">
         <div>
-          <p className="eyebrow">Local-first chat</p>
-          <h2>HiveMind router</h2>
-          <p className="muted">
-            Type a message or slash command. Everything else lives in Preferences so this screen stays focused on chatting.
-          </p>
+          <p className="eyebrow">Local-only</p>
+          <h2>Ollama HiveMind chat</h2>
+          <p className="muted">Router + chat run on qwen2.5:1.5b-instruct with a 64K local memory.</p>
         </div>
         <div className="status">
           <span className={`badge ${modelStatus?.available ? 'success' : 'warn'}`}>
@@ -306,61 +125,25 @@ const ChatPage = () => {
         </div>
       </div>
 
-      <div className="hero-banner">
-        <div className="hero-copy">
-          <p className="eyebrow">Main interface</p>
-          <h3>Route prompts, preview context, and mount EMUs without leaving this screen.</h3>
-          <p className="muted">
-            Keep the router online, mount EMUs you want to use, and send prompts directly from the unified cockpit.
-          </p>
-          <div className="pill-row">
-            <span className="pill">/emus to list</span>
-            <span className="pill">/mount &lt;id&gt;</span>
-            <span className="pill">/reset to clear</span>
-            <span className="pill">OpenRouter fallback</span>
-          </div>
-        </div>
-        <div className="hero-summary">
-          <div className="summary-card">
-            <p className="eyebrow">Readiness</p>
-            <ul className="meta-list">
-              <li>
-                <span>Backend</span>
-                <strong>{apiBase}</strong>
-              </li>
-              <li>
-                <span>Router</span>
-                <strong>{modelStatus?.model || 'qwen2.5:1.5b-instruct (default)'}</strong>
-              </li>
-              <li>
-                <span>Model state</span>
-                <strong>{modelStatus?.available ? 'Online' : 'Offline'}</strong>
-              </li>
-              <li>
-                <span>Mounted EMUs</span>
-                <strong>{mountedEmus.length || 'None yet'}</strong>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
       <div className="status-strip">
         <div className="status-chip">
           <span className="eyebrow">Backend</span>
           <strong>{apiBase}</strong>
         </div>
         <div className="status-chip">
-          <span className="eyebrow">Router</span>
-          <strong>{modelStatus?.model || 'qwen2.5:1.5b-instruct (default)'}</strong>
+          <span className="eyebrow">Session</span>
+          <strong>{sessionId}</strong>
+          <button className="ghost" onClick={regenerateSession}>
+            Reset
+          </button>
         </div>
         <div className="status-chip">
-          <span className="eyebrow">EMUs</span>
-          <strong>{mountedEmus.length} mounted / {emus.length} available</strong>
+          <span className="eyebrow">State</span>
+          <strong>{statusLabel}</strong>
         </div>
         <div className="status-chip">
-          <span className="eyebrow">Live status</span>
-          <strong>{status === 'idle' ? 'Idle' : status === 'routing' ? 'Routing…' : 'Chatting…'}</strong>
+          <span className="eyebrow">Memory</span>
+          <strong>~64K local context</strong>
         </div>
       </div>
 
@@ -371,98 +154,60 @@ const ChatPage = () => {
       </div>
 
       <div className="collapsible-stack">
-        <div className={`collapse-card ${collapsedSections.decision ? 'collapsed' : ''}`}>
-          <button className="collapse-toggle" type="button" onClick={() => toggleSection('decision')}>
-            <div>
-              <p className="eyebrow">Router decision</p>
-              <strong>Intent, context need, and tags</strong>
-            </div>
-            <span className="chevron">{collapsedSections.decision ? '⌄' : '⌃'}</span>
-          </button>
-          {!collapsedSections.decision && (
-            <div className="collapse-body">
-              {decision ? (
-                <ul className="meta-list">
-                  <li>
-                    <span>Intent</span>
-                    <strong>{decision.intent}</strong>
-                  </li>
-                  <li>
-                    <span>Needs context</span>
-                    <strong>{decision.needsContext ? 'Yes' : 'No'}</strong>
-                  </li>
-                  <li>
-                    <span>Tags</span>
-                    <strong>{decision.tags.join(', ') || 'none'}</strong>
-                  </li>
-                </ul>
-              ) : (
-                <p className="muted">Send a message to see router intent and tags.</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className={`collapse-card ${collapsedSections.context ? 'collapsed' : ''}`}>
-          <button className="collapse-toggle" type="button" onClick={() => toggleSection('context')}>
-            <div>
-              <p className="eyebrow">Context preview</p>
-              <strong>What the EMUs returned</strong>
-            </div>
-            <span className="chevron">{collapsedSections.context ? '⌄' : '⌃'}</span>
-          </button>
-          {!collapsedSections.context && (
-            <div className="collapse-body">
-              {retrievals.length ? (
-                <ul className="meta-list ordered">
-                  {retrievals.map((hit, index) => (
-                    <li key={`${hit.emuId}-${index}`} className="emu-row">
-                      <div>
-                        <strong>{hit.emuName}</strong>
-                        <p className="muted">Score {hit.score.toFixed(2)}</p>
-                        <p className="snippet">{hit.snippet}</p>
-                      </div>
-                      {hit.source && <span className="badge ghost">{hit.source}</span>}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted">Mount an EMU in Preferences to see context here.</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className={`collapse-card ${collapsedSections.commands ? 'collapsed' : ''}`}>
-          <button className="collapse-toggle" type="button" onClick={() => toggleSection('commands')}>
-            <div>
-              <p className="eyebrow">Slash commands</p>
-              <strong>Quick actions that work anywhere</strong>
-            </div>
-            <span className="chevron">{collapsedSections.commands ? '⌄' : '⌃'}</span>
-          </button>
-          {!collapsedSections.commands && (
-            <div className="collapse-body">
+        <div className="collapse-card">
+          <div className="collapse-body">
+            {decision ? (
               <ul className="meta-list">
                 <li>
-                  <span>/emus</span>
-                  <strong>List mounted + available</strong>
+                  <span>Intent</span>
+                  <strong>{decision.intent}</strong>
                 </li>
                 <li>
-                  <span>/mount &lt;emu-id&gt;</span>
-                  <strong>Attach an EMU</strong>
+                  <span>Needs context</span>
+                  <strong>{decision.needsContext ? 'Yes' : 'No'}</strong>
                 </li>
                 <li>
-                  <span>/unmount &lt;emu-id&gt;</span>
-                  <strong>Detach an EMU</strong>
+                  <span>Transformed query</span>
+                  <strong>{decision.transformedQuery || '—'}</strong>
                 </li>
                 <li>
-                  <span>/reset</span>
-                  <strong>Clear the session</strong>
+                  <span>Re-ranking</span>
+                  <strong>{decision.rerankCriteria || 'None'}</strong>
                 </li>
+                <li>
+                  <span>Tags</span>
+                  <strong>{decision.tags.join(', ') || 'none'}</strong>
+                </li>
+                {decision.notes && (
+                  <li>
+                    <span>Notes</span>
+                    <strong>{decision.notes}</strong>
+                  </li>
+                )}
               </ul>
-            </div>
-          )}
+            ) : (
+              <p className="muted">Send a prompt to see router output (intent, query rewrite, and re-ranking).</p>
+            )}
+          </div>
+        </div>
+
+        <div className="collapse-card">
+          <div className="collapse-body">
+            {conversationPreview.length ? (
+              <ul className="meta-list ordered">
+                {conversationPreview.map((turn, index) => (
+                  <li key={`${turn.role}-${index}`} className="emu-row">
+                    <div>
+                      <strong>{turn.role}</strong>
+                      <p className="snippet">{turn.content}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">Conversation history will appear here as it is reused.</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -470,25 +215,13 @@ const ChatPage = () => {
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="Type a message or try /mount poetry.emu"
+          placeholder="Type a message to chat locally"
           disabled={status !== 'idle'}
         />
         <button type="submit" disabled={status !== 'idle'}>
           {status === 'routing' || status === 'chatting' ? 'Working…' : 'Send'}
         </button>
       </form>
-
-      <div className="chat-actions">
-        <button onClick={() => handleOpenRouter('openrouter')} disabled={openRouterBusy || status !== 'idle'}>
-          Use OpenRouter
-        </button>
-        <button onClick={() => handleOpenRouter('sota')} disabled={openRouterBusy || status !== 'idle'}>
-          Use SOTA pipeline
-        </button>
-        <div className="muted small">
-          Using model <strong>{openRouterModel}</strong> via <code>{openRouterEndpoint}</code>
-        </div>
-      </div>
     </div>
   );
 };

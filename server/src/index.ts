@@ -4,8 +4,6 @@ import fs from 'fs';
 import path from 'path';
 import router from './routes/router';
 import { config } from './config';
-import emuRoutes from './routes/emu';
-import retrieverRoutes from './routes/retriever';
 
 const app = express();
 
@@ -22,8 +20,6 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api', router);
-app.use('/api', emuRoutes);
-app.use('/api', retrieverRoutes);
 
 const webRoot = path.resolve(__dirname, '..', '..', 'web', 'dist');
 

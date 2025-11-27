@@ -1,13 +1,23 @@
 import { Ollama } from 'ollama';
 import { config } from '../config';
-import { ChatCompletion, RetrievalResult, RouterDecision } from '../types';
-import { hiveMindChatPrompt, hiveMindRoutingPrompt } from './prompts';
+import { ChatCompletion, ConversationTurn, RouterDecision } from '../types';
+import { chatSystemPrompt, routerSystemPrompt } from './prompts';
+
+interface OllamaChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
 
 export class OllamaClient {
   private client: Ollama;
+  private histories = new Map<string, ConversationTurn[]>();
 
   constructor() {
     this.client = new Ollama({ host: config.ollamaHost });
+  }
+
+  getHistory(sessionId: string): ConversationTurn[] {
+    return this.histories.get(sessionId) || [];
   }
 
   async checkModelAvailability(model: string): Promise<boolean> {
@@ -20,15 +30,22 @@ export class OllamaClient {
     }
   }
 
-  async route(message: string): Promise<RouterDecision> {
+  async route(message: string, history: ConversationTurn[] = []): Promise<RouterDecision> {
     const model = config.routerModel;
+    const historyPreview = history
+      .slice(-4)
+      .map((turn) => `${turn.role}: ${turn.content}`)
+      .join('\n');
+
+    const routingMessages: OllamaChatMessage[] = [
+      { role: 'system', content: routerSystemPrompt },
+      historyPreview ? { role: 'user', content: `Conversation so far:\n${historyPreview}` } : undefined,
+      { role: 'user', content: message }
+    ].filter(Boolean) as OllamaChatMessage[];
 
     const response = await this.client.chat({
       model,
-      messages: [
-        { role: 'system', content: hiveMindRoutingPrompt },
-        { role: 'user', content: message }
-      ],
+      messages: routingMessages,
       stream: false
     });
 
@@ -39,47 +56,75 @@ export class OllamaClient {
         intent: parsed.intent || 'unknown',
         needsContext: Boolean(parsed.needsContext),
         tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-        notes: parsed.notes
+        notes: parsed.notes,
+        transformedQuery: parsed.transformedQuery,
+        rerankCriteria: parsed.rerankCriteria
       };
     } catch (error) {
       console.warn('Router response not JSON, falling back to defaults', content, error);
-      return { intent: 'unknown', needsContext: true, tags: ['general'], notes: content };
+      return {
+        intent: 'unknown',
+        needsContext: history.length > 0,
+        tags: ['general'],
+        notes: content,
+        transformedQuery: message,
+        rerankCriteria: history.length ? 'Used recent conversation as context.' : 'none'
+      };
     }
   }
 
-  async chat(message: string, context?: RetrievalResult[]): Promise<ChatCompletion> {
+  async chat(message: string, sessionId = 'default', transformedQuery?: string): Promise<ChatCompletion> {
     const model = config.routerModel;
     const started = Date.now();
+    const history = this.histories.get(sessionId) || [];
 
-    const contextText = (context || [])
-      .map(
-        (hit, index) =>
-          `[${index + 1}] EMU ${hit.emuName} (${hit.source || 'notes.md'}): ${hit.snippet.trim()}`
-      )
-      .join('\n\n');
+    const userMessage: ConversationTurn = {
+      role: 'user',
+      content: transformedQuery || message
+    };
 
-    const systemPrompt = context?.length
-      ? `${hiveMindChatPrompt}\n\nContext handling:\n- Use the EMU context snippets when relevant and cite the EMU name.\n- If the provided context is irrelevant, answer from your local knowledge concisely.`
-      : hiveMindChatPrompt;
+    const historyMessages: ConversationTurn[] = [...history, userMessage];
+    this.histories.set(sessionId, historyMessages);
+    this.trimHistory(sessionId);
 
-    const userContent = context?.length
-      ? `User message: ${message}\n\nContext:\n${contextText}\n\nIf the context is relevant, use it to answer the user clearly.`
-      : message;
+    const messages: OllamaChatMessage[] = [
+      { role: 'system', content: chatSystemPrompt },
+      ...this.histories.get(sessionId)!.map((turn) => ({ role: turn.role, content: turn.content }))
+    ];
+
     const response = await this.client.chat({
       model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent }
-      ],
+      messages,
       stream: false
     });
 
+    const replyContent = response.message.content;
+    const assistantTurn: ConversationTurn = { role: 'assistant', content: replyContent };
+    const updatedHistory = [...this.histories.get(sessionId)!, assistantTurn];
+    this.histories.set(sessionId, updatedHistory);
+    this.trimHistory(sessionId);
+
     const latencyMs = Date.now() - started;
     return {
-      reply: response.message.content,
+      reply: replyContent,
       model,
       latencyMs,
-      contextUsed: context
+      contextUsed: this.histories.get(sessionId)
     };
+  }
+
+  private trimHistory(sessionId: string) {
+    const history = this.histories.get(sessionId);
+    if (!history) return;
+
+    const charLimit = config.maxContextCharacters;
+    let totalChars = history.reduce((sum, turn) => sum + turn.content.length, 0);
+
+    while (totalChars > charLimit && history.length > 2) {
+      const removed = history.shift();
+      totalChars -= removed?.content.length || 0;
+    }
+
+    this.histories.set(sessionId, history);
   }
 }
