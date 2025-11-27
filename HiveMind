@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE_DIR="$ROOT_DIR/.hivemind"
 LOG_DIR="$STATE_DIR/logs"
 MODEL_NAME="${OLLAMA_ROUTER_MODEL:-qwen2.5:1.5b-instruct}"
+SERVER_PORT="${PORT:-4000}"
+WEB_PORT="${WEB_PORT:-5173}"
 
 mkdir -p "$LOG_DIR"
 
@@ -116,12 +118,22 @@ install_node_dependencies() {
 
 start_server() {
   ensure_command "npm" "Install Node.js (includes npm) before continuing."
-  start_background "cd '$ROOT_DIR' && npm run dev:server" "$SERVER_PID_FILE" "$LOG_DIR/server.log"
+  start_background "cd '$ROOT_DIR' && PORT='$SERVER_PORT' npm run dev:server" "$SERVER_PID_FILE" "$LOG_DIR/server.log"
 }
 
 start_web() {
   ensure_command "npm" "Install Node.js (includes npm) before continuing."
-  start_background "cd '$ROOT_DIR' && npm run dev:web" "$WEB_PID_FILE" "$LOG_DIR/web.log"
+  start_background "cd '$ROOT_DIR' && npm run dev:web -- --host 0.0.0.0 --port '$WEB_PORT'" "$WEB_PID_FILE" "$LOG_DIR/web.log"
+}
+
+print_access_instructions() {
+  local ui_url="http://localhost:${WEB_PORT}"
+  local api_url="http://localhost:${SERVER_PORT}"
+
+  log "Web UI available at ${ui_url}"
+  log "API server listening at ${api_url}"
+  log "In Codespaces, forward port ${WEB_PORT} to open the UI." \
+    "If the web process was already running, the above URLs still apply."
 }
 
 cmd_install() {
@@ -131,6 +143,7 @@ cmd_install() {
   install_node_dependencies
   start_server
   start_web
+  print_access_instructions
 }
 
 cmd_start() {
@@ -138,6 +151,7 @@ cmd_start() {
   install_node_dependencies
   start_server
   start_web
+  print_access_instructions
 }
 
 cmd_stop() {
