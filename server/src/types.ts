@@ -24,3 +24,37 @@ export interface ConversationTurn {
   role: 'user' | 'assistant';
   content: string;
 }
+
+export interface NewMemoryBlockPayload {
+  title?: string;
+  content: string;
+  tags?: string[];
+  source?: string;
+}
+
+export interface MemoryBlock {
+  id: string;
+  title: string;
+  content: string;
+  intent: string;
+  tags: string[];
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+  summary: string;
+  score: number;
+}
+
+export interface MemoryIndex {
+  byIntent: Record<string, string[]>;
+  byTag: Record<string, string[]>;
+}
+
+export interface MemoryStatus {
+  totalBlocks: number;
+  intents: { intent: string; count: number }[];
+  topTags: string[];
+  storagePath: string;
+  lastUpdated: string | null;
+  index: MemoryIndex;
+}

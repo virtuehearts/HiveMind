@@ -20,6 +20,27 @@ export interface ConversationTurn {
   content: string;
 }
 
+export interface MemoryBlock {
+  id: string;
+  title: string;
+  content: string;
+  intent: string;
+  tags: string[];
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+  summary: string;
+  score: number;
+}
+
+export interface MemoryStatus {
+  totalBlocks: number;
+  intents: { intent: string; count: number }[];
+  topTags: string[];
+  storagePath: string;
+  lastUpdated: string | null;
+}
+
 export function resolveDefaultApiBase() {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
 
@@ -61,12 +82,32 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return response.json();
 }
 
+async function getJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${getApiBase()}${path}`);
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+  return response.json();
+}
+
 export function fetchRouterDecision(message: string, sessionId: string) {
   return postJson<RouterDecision>('/api/route', { message, sessionId });
 }
 
 export function fetchChatCompletion(message: string, sessionId: string, transformedQuery?: string) {
   return postJson<ChatCompletion>('/api/chat', { message, sessionId, transformedQuery });
+}
+
+export function fetchMemoryStatus() {
+  return getJson<MemoryStatus>('/api/memory/status');
+}
+
+export function fetchMemoryBlocks() {
+  return getJson<MemoryBlock[]>('/api/memory/blocks');
+}
+
+export function createMemoryBlock(payload: { title?: string; content: string; tags?: string[] }) {
+  return postJson<MemoryBlock>('/api/memory/blocks', payload);
 }
 
 export async function fetchModelStatus() {
