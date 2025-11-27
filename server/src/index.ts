@@ -38,6 +38,11 @@ if (fs.existsSync(webRoot)) {
 
     res.sendFile(path.join(webRoot, 'index.html'));
   });
+} else {
+  console.warn(
+    `Web UI build directory not found at ${webRoot}. ` +
+      'Run "npm run build" (or "npm --workspace web run build") so the frontend can be served.'
+  );
 }
 
 app.listen(config.port, () => {
