@@ -76,7 +76,26 @@ router.post('/chat', async (req, res) => {
       });
     }
 
-    const completion = await ollama.chat(body.message, sessionId, body.transformedQuery);
+    const searchQuery = body.transformedQuery || body.message;
+    const relevantBlocks = memoryLayer.findRelevantBlocks(searchQuery, {
+      intents: body.intent ? [body.intent] : undefined,
+      tags: body.tags
+    });
+
+    const memoryContext = relevantBlocks
+      .map((block) => {
+        const tags = block.tags.slice(0, 4).join(', ');
+        return `- (${block.intent}) [${tags}] ${block.title}: ${block.summary}`;
+      })
+      .join('\n');
+
+    const completion = await ollama.chat(
+      body.message,
+      sessionId,
+      body.transformedQuery,
+      memoryContext,
+      relevantBlocks
+    );
     res.json(completion);
   } catch (error) {
     console.error('Chat error', error);
