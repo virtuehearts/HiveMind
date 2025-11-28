@@ -170,7 +170,7 @@ const ChatPage = () => {
         <div>
           <p className="eyebrow">Local-only</p>
           <h2>Ollama HiveMind chat</h2>
-          <p className="muted">Router + chat run on qwen2.5:1.5b-instruct with a 64K local memory.</p>
+          <p className="muted">Router + chat run on qwen2.5:1.5b-instruct with locally mounted EMU memory blocks.</p>
         </div>
         <div className="status">
           <span className={`badge ${modelStatus?.available ? 'success' : 'warn'}`}>
@@ -198,7 +198,7 @@ const ChatPage = () => {
         </div>
         <div className="status-chip">
           <span className="eyebrow">Memory</span>
-          <strong>~64K local context</strong>
+          <strong>Local EMU blocks</strong>
         </div>
       </div>
 

@@ -6,7 +6,10 @@ import { NewMemoryBlockPayload, RouterRequestBody } from '../types';
 
 const router = Router();
 const ollama = new OllamaClient();
-const memoryLayer = new EmuMemoryLayer();
+const memoryLayer = new EmuMemoryLayer({
+  storePath: config.memoryStorePath,
+  emuBasePath: config.emuBasePath
+});
 
 router.get('/model', async (_req, res) => {
   const available = await ollama.checkModelAvailability(config.routerModel);
