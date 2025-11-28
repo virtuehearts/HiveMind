@@ -52,6 +52,14 @@ export function resolveDefaultApiBase() {
       return `${protocol}//4000-${forwarded[2]}`;
     }
 
+    // GitHub Codespaces and similar environments use domain-based port forwarding
+    // with the port embedded as the final "-####" segment of the hostname.
+    // Example: https://my-space-5173.app.github.dev -> https://my-space-4000.app.github.dev
+    const subdomainPortMatch = hostname.match(/^(.*-)(\d+)(\..*)$/);
+    if (subdomainPortMatch) {
+      return `${protocol}//${subdomainPortMatch[1]}4000${subdomainPortMatch[3]}`;
+    }
+
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return `${protocol}//${hostname}:4000`;
     }
