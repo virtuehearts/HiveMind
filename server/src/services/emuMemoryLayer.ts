@@ -35,18 +35,43 @@ interface Classification {
   score: number;
 }
 
+interface EmuMetadata {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  benchmarkScore?: number;
+  notesPath?: string;
+}
+
+interface EmuChunkingConfig {
+  chunkSize: number;
+  chunkOverlap: number;
+}
+
+interface MemoryLayerOptions {
+  storePath?: string;
+  emuBasePath?: string;
+}
+
 export class EmuMemoryLayer {
   private storePath: string;
-  private blocks: MemoryBlock[] = [];
+  private emuBasePath: string;
+  private userBlocks: MemoryBlock[] = [];
+  private emuBlocks: MemoryBlock[] = [];
   private index: MemoryIndex = { byIntent: {}, byTag: {} };
 
-  constructor(storePath?: string) {
-    this.storePath = storePath || path.resolve(__dirname, '..', 'data', 'emu-memory.json');
+  constructor(options?: MemoryLayerOptions) {
+    this.storePath =
+      options?.storePath || path.resolve(process.cwd(), '.hivemind', 'emu-memory.json');
+    this.emuBasePath = options?.emuBasePath || path.resolve(process.cwd(), 'emus');
     this.load();
+    this.loadEmuMounts();
+    this.rebuildIndex();
   }
 
   listBlocks(): MemoryBlock[] {
-    return [...this.blocks];
+    return this.getAllBlocks();
   }
 
   getStatus(): MemoryStatus {
@@ -61,12 +86,24 @@ export class EmuMemoryLayer {
       .slice(0, 6)
       .map((entry) => entry.tag);
 
+    const allBlocks = this.getAllBlocks();
+    const lastUpdated = allBlocks
+      .map((block) => block.updatedAt)
+      .sort((a, b) => (a > b ? -1 : 1))[0];
+
+    const storagePath = [
+      `${this.storePath} (user memories)`,
+      fs.existsSync(this.emuBasePath) ? `${this.emuBasePath} (mounted EMUs)` : undefined
+    ]
+      .filter(Boolean)
+      .join(' + ');
+
     return {
-      totalBlocks: this.blocks.length,
+      totalBlocks: allBlocks.length,
       intents: intentEntries.sort((a, b) => b.count - a.count),
       topTags: tagEntries,
-      storagePath: this.storePath,
-      lastUpdated: this.blocks[0]?.createdAt ?? null,
+      storagePath,
+      lastUpdated: lastUpdated ?? null,
       index: this.index
     };
   }
@@ -93,7 +130,7 @@ export class EmuMemoryLayer {
       score: classification.score
     };
 
-    this.blocks = [block, ...this.blocks];
+    this.userBlocks = [block, ...this.userBlocks];
     this.rebuildIndex();
     this.persist();
 
@@ -108,7 +145,7 @@ export class EmuMemoryLayer {
     const tagSet = new Set((options?.tags || []).map((tag) => tag.toLowerCase()));
     const intentSet = new Set((options?.intents || []).map((intent) => intent.toLowerCase()));
 
-    const scored = this.blocks
+    const scored = this.getAllBlocks()
       .map((block) => {
         const blockTags = block.tags.map((tag) => tag.toLowerCase());
         const tagMatches = blockTags.filter((tag) => tokens.has(tag) || tagSet.has(tag)).length;
@@ -125,6 +162,10 @@ export class EmuMemoryLayer {
       .map((entry) => entry.block);
 
     return scored;
+  }
+
+  private getAllBlocks(): MemoryBlock[] {
+    return [...this.emuBlocks, ...this.userBlocks];
   }
 
   private classify(content: string, title?: string, userTags?: string[]): Classification {
@@ -190,7 +231,7 @@ export class EmuMemoryLayer {
     const byIntent: Record<string, string[]> = {};
     const byTag: Record<string, string[]> = {};
 
-    for (const block of this.blocks) {
+    for (const block of this.getAllBlocks()) {
       byIntent[block.intent] = byIntent[block.intent] || [];
       byIntent[block.intent].push(block.id);
 
@@ -206,25 +247,125 @@ export class EmuMemoryLayer {
   private persist() {
     const dir = path.dirname(this.storePath);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(this.storePath, JSON.stringify({ blocks: this.blocks }, null, 2), 'utf-8');
+    fs.writeFileSync(this.storePath, JSON.stringify({ blocks: this.userBlocks }, null, 2), 'utf-8');
   }
 
   private load() {
     try {
       if (!fs.existsSync(this.storePath)) {
-        this.blocks = [];
+        this.userBlocks = [];
         this.index = { byIntent: {}, byTag: {} };
         return;
       }
 
       const raw = fs.readFileSync(this.storePath, 'utf-8');
       const parsed = JSON.parse(raw);
-      this.blocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
-      this.rebuildIndex();
+      this.userBlocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
     } catch (error) {
       console.warn('Failed to load EMU memory store, starting empty.', error);
-      this.blocks = [];
+      this.userBlocks = [];
       this.index = { byIntent: {}, byTag: {} };
     }
+  }
+
+  private loadEmuMounts() {
+    this.emuBlocks = [];
+    if (!fs.existsSync(this.emuBasePath)) return;
+
+    const entries = fs.readdirSync(this.emuBasePath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.endsWith('.emu')) continue;
+
+      const emuPath = path.join(this.emuBasePath, entry.name);
+      const meta = this.readMetadata(emuPath);
+      const chunking = this.parseChunkingConfig(path.join(emuPath, 'config.yaml'));
+      const notesPath = meta.notesPath || 'notes.md';
+      const notesFile = path.join(emuPath, notesPath);
+
+      if (!fs.existsSync(notesFile)) {
+        console.warn(`EMU ${entry.name} is missing ${notesPath}; skipping.`);
+        continue;
+      }
+
+      const content = fs.readFileSync(notesFile, 'utf-8');
+      const blocks = this.chunkContent(content, chunking);
+      const timestamp = new Date().toISOString();
+      const emuId = meta.id || entry.name.replace(/\.emu$/, '');
+      const baseTitle = meta.name || emuId;
+      const tags = Array.isArray(meta.tags) ? meta.tags : [];
+
+      blocks.forEach((chunk, index) => {
+        const classification = this.classify(chunk, baseTitle, tags);
+        this.emuBlocks.push({
+          id: `emu-${emuId}-${index}`,
+          title: `${baseTitle} #${index + 1}`,
+          content: chunk,
+          intent: classification.intent,
+          tags: Array.from(new Set([...classification.tags, ...tags])),
+          source: `emu:${emuId}`,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          summary: classification.summary,
+          score: Math.max(classification.score, meta.benchmarkScore || 0)
+        });
+      });
+    }
+  }
+
+  private readMetadata(emuPath: string): EmuMetadata {
+    const metaPath = path.join(emuPath, 'metadata.json');
+    try {
+      if (!fs.existsSync(metaPath)) return {};
+      const raw = fs.readFileSync(metaPath, 'utf-8');
+      return JSON.parse(raw);
+    } catch (error) {
+      console.warn(`Failed to parse metadata for ${emuPath}`, error);
+      return {};
+    }
+  }
+
+  private parseChunkingConfig(configPath: string): EmuChunkingConfig {
+    const defaults: EmuChunkingConfig = { chunkSize: 512, chunkOverlap: 64 };
+    try {
+      if (!fs.existsSync(configPath)) return defaults;
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      const sizeMatch = raw.match(/chunking:\s*[\r\n]+\s*size:\s*(\d+)/i);
+      const overlapMatch = raw.match(/overlap:\s*(\d+)/i);
+      return {
+        chunkSize: sizeMatch ? Number(sizeMatch[1]) || defaults.chunkSize : defaults.chunkSize,
+        chunkOverlap: overlapMatch ? Number(overlapMatch[1]) || defaults.chunkOverlap : defaults.chunkOverlap
+      };
+    } catch (error) {
+      console.warn('Failed to parse EMU chunking config; using defaults.', error);
+      return defaults;
+    }
+  }
+
+  private chunkContent(content: string, config: EmuChunkingConfig): string[] {
+    const cleaned = content.replace(/\r\n/g, '\n').trim();
+    if (!cleaned) return [];
+
+    const paragraphs = cleaned.split(/\n\s*\n/);
+    const chunks: string[] = [];
+
+    for (const paragraph of paragraphs) {
+      const text = paragraph.trim();
+      if (!text) continue;
+
+      if (text.length <= config.chunkSize) {
+        chunks.push(text);
+        continue;
+      }
+
+      let start = 0;
+      while (start < text.length) {
+        const end = Math.min(text.length, start + config.chunkSize);
+        chunks.push(text.slice(start, end));
+        if (end === text.length) break;
+        start = end - config.chunkOverlap;
+      }
+    }
+
+    return chunks;
   }
 }

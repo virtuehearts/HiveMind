@@ -1,3 +1,4 @@
+import path from 'path';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -20,6 +21,9 @@ export const config = {
   ollamaHost: process.env.OLLAMA_HOST || 'http://localhost:11434',
   routerModel: process.env.OLLAMA_ROUTER_MODEL || 'qwen2.5:1.5b-instruct',
   allowOrigins: [...defaultAllowOrigins, ...envAllowOrigins],
+  emuBasePath: process.env.EMU_BASE_PATH || path.resolve(process.cwd(), 'emus'),
+  memoryStorePath:
+    process.env.EMU_MEMORY_STORE_PATH || path.resolve(process.cwd(), '.hivemind', 'emu-memory.json'),
   // Approximate 64k token history window (assuming ~4 characters per token)
   maxContextCharacters: Number(process.env.MAX_CONTEXT_CHARACTERS) || 256000
 };
