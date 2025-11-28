@@ -100,6 +100,33 @@ export class EmuMemoryLayer {
     return block;
   }
 
+  findRelevantBlocks(
+    query: string,
+    options?: { intents?: string[]; tags?: string[]; limit?: number }
+  ): MemoryBlock[] {
+    const tokens = this.tokenize(query);
+    const tagSet = new Set((options?.tags || []).map((tag) => tag.toLowerCase()));
+    const intentSet = new Set((options?.intents || []).map((intent) => intent.toLowerCase()));
+
+    const scored = this.blocks
+      .map((block) => {
+        const blockTags = block.tags.map((tag) => tag.toLowerCase());
+        const tagMatches = blockTags.filter((tag) => tokens.has(tag) || tagSet.has(tag)).length;
+        const intentBoost = intentSet.size && intentSet.has(block.intent.toLowerCase()) ? 2 : 0;
+
+        const contentMatches = Array.from(tokens).filter((token) => block.content.toLowerCase().includes(token)).length;
+        const score = intentBoost + tagMatches * 1.5 + contentMatches * 0.5 + block.score;
+
+        return { block, score };
+      })
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, options?.limit || 4)
+      .map((entry) => entry.block);
+
+    return scored;
+  }
+
   private classify(content: string, title?: string, userTags?: string[]): Classification {
     const text = `${title || ''} ${content}`.toLowerCase();
 
@@ -147,6 +174,16 @@ export class EmuMemoryLayer {
       summary,
       score
     };
+  }
+
+  private tokenize(text: string): Set<string> {
+    const tokens = text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((token) => token.length >= 4 && !STOP_WORDS.has(token));
+
+    return new Set(tokens);
   }
 
   private rebuildIndex() {

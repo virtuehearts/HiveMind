@@ -1,6 +1,8 @@
 export interface RouterRequestBody {
   message: string;
   sessionId?: string;
+  intent?: string;
+  tags?: string[];
 }
 
 export interface RouterDecision {
@@ -18,6 +20,7 @@ export interface ChatCompletion {
   latencyMs?: number;
   tokens?: number;
   contextUsed?: ConversationTurn[];
+  memoryBlocks?: MemoryBlock[];
 }
 
 export interface ConversationTurn {

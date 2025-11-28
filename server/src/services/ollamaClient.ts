@@ -1,6 +1,6 @@
 import { Ollama } from 'ollama';
 import { config } from '../config';
-import { ChatCompletion, ConversationTurn, RouterDecision } from '../types';
+import { ChatCompletion, ConversationTurn, MemoryBlock, RouterDecision } from '../types';
 import { chatSystemPrompt, routerSystemPrompt } from './prompts';
 
 interface OllamaChatMessage {
@@ -73,7 +73,13 @@ export class OllamaClient {
     }
   }
 
-  async chat(message: string, sessionId = 'default', transformedQuery?: string): Promise<ChatCompletion> {
+  async chat(
+    message: string,
+    sessionId = 'default',
+    transformedQuery?: string,
+    memoryContext?: string,
+    memoryBlocks?: MemoryBlock[]
+  ): Promise<ChatCompletion> {
     const model = config.routerModel;
     const started = Date.now();
     const history = this.histories.get(sessionId) || [];
@@ -87,8 +93,12 @@ export class OllamaClient {
     this.histories.set(sessionId, historyMessages);
     this.trimHistory(sessionId);
 
+    const systemContent = memoryContext
+      ? `${chatSystemPrompt}\n\nLocal EMU memory blocks:\n${memoryContext}\nUse them when relevant.\n` 
+      : chatSystemPrompt;
+
     const messages: OllamaChatMessage[] = [
-      { role: 'system', content: chatSystemPrompt },
+      { role: 'system', content: systemContent },
       ...this.histories.get(sessionId)!.map((turn) => ({ role: turn.role, content: turn.content }))
     ];
 
@@ -109,7 +119,8 @@ export class OllamaClient {
       reply: replyContent,
       model,
       latencyMs,
-      contextUsed: this.histories.get(sessionId)
+      contextUsed: this.histories.get(sessionId),
+      memoryBlocks
     };
   }
 
