@@ -33,6 +33,12 @@ export interface NewMemoryBlockPayload {
   content: string;
   tags?: string[];
   source?: string;
+  labels?: string[];
+  notes?: string;
+  genre?: string;
+  isPrivate?: boolean;
+  relevance?: number;
+  overallScore?: number;
 }
 
 export interface MemoryBlock {
@@ -46,7 +52,21 @@ export interface MemoryBlock {
   updatedAt: string;
   summary: string;
   score: number;
+  size?: number;
+  labels?: string[];
+  notes?: string;
+  genre?: string;
+  isPrivate?: boolean;
+  relevance?: number;
+  overallScore?: number;
 }
+
+export type MemoryBlockUpdatePayload = Partial<
+  Pick<
+    MemoryBlock,
+    'title' | 'tags' | 'labels' | 'notes' | 'genre' | 'isPrivate' | 'relevance' | 'overallScore'
+  >
+>;
 
 export interface MemoryIndex {
   byIntent: Record<string, string[]>;

@@ -10,10 +10,13 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@types/multer": "^2.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "ollama": "^0.5.7"
+    "multer": "^2.0.2",
+    "ollama": "^0.5.7",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

@@ -31,7 +31,21 @@ export interface MemoryBlock {
   updatedAt: string;
   summary: string;
   score: number;
+  size?: number;
+  labels?: string[];
+  notes?: string;
+  genre?: string;
+  isPrivate?: boolean;
+  relevance?: number;
+  overallScore?: number;
 }
+
+export type MemoryBlockUpdate = Partial<
+  Pick<
+    MemoryBlock,
+    'title' | 'tags' | 'labels' | 'notes' | 'genre' | 'isPrivate' | 'relevance' | 'overallScore'
+  >
+>;
 
 export interface MemoryStatus {
   totalBlocks: number;
@@ -39,6 +53,7 @@ export interface MemoryStatus {
   topTags: string[];
   storagePath: string;
   lastUpdated: string | null;
+  index?: { byIntent: Record<string, string[]>; byTag: Record<string, string[]> };
 }
 
 export function resolveDefaultApiBase() {
@@ -116,6 +131,53 @@ export function fetchMemoryBlocks() {
 
 export function createMemoryBlock(payload: { title?: string; content: string; tags?: string[] }) {
   return postJson<MemoryBlock>('/api/memory/blocks', payload);
+}
+
+export function fetchMemoryBlock(id: string) {
+  return getJson<MemoryBlock>(`/api/memory/blocks/${id}`);
+}
+
+export function updateMemoryBlock(id: string, payload: MemoryBlockUpdate) {
+  return fetch(`${getApiBase()}/api/memory/blocks/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then((response) => {
+    if (!response.ok) {
+      throw new Error('Unable to update memory block');
+    }
+    return response.json();
+  });
+}
+
+export function deleteMemoryBlock(id: string) {
+  return fetch(`${getApiBase()}/api/memory/blocks/${id}`, { method: 'DELETE' }).then((response) => {
+    if (!response.ok) {
+      throw new Error('Unable to delete memory block');
+    }
+    return response.json();
+  });
+}
+
+export async function exportMemoryBlock(id: string) {
+  const response = await fetch(`${getApiBase()}/api/memory/blocks/${id}/export`);
+  if (!response.ok) {
+    throw new Error('Unable to export memory block');
+  }
+  return response.blob();
+}
+
+export async function importMemoryDocument(formData: FormData) {
+  const response = await fetch(`${getApiBase()}/api/memory/import`, {
+    method: 'POST',
+    body: formData
+  });
+
+  if (!response.ok) {
+    throw new Error('Unable to import memory document');
+  }
+
+  return response.json() as Promise<MemoryBlock>;
 }
 
 export async function fetchModelStatus() {

@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 
 const AppLayout = () => {
   return (
@@ -11,6 +11,12 @@ const AppLayout = () => {
             <p className="brand-subtitle">Local Ollama router</p>
           </div>
         </div>
+        <nav className="nav-links">
+          <NavLink to="/" end>
+            Chat
+          </NavLink>
+          <NavLink to="/memory">Memories</NavLink>
+        </nav>
       </header>
       <main>
         <Outlet />
