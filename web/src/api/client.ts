@@ -86,6 +86,33 @@ export interface ScrapedChunkRecord {
   approxTokens: number;
 }
 
+export type QueryGenerationStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface QueryGenerationResult {
+  id: string;
+  query: string;
+  status: 'pending' | 'running' | 'succeeded' | 'failed';
+  response?: string;
+  filePath?: string;
+  error?: string;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+export interface QueryGenerationJob {
+  id: string;
+  model: string;
+  prompt: string;
+  status: QueryGenerationStatus;
+  createdAt: string;
+  updatedAt: string;
+  total: number;
+  completed: number;
+  failed: number;
+  generatedDir: string;
+  items: QueryGenerationResult[];
+}
+
 export function resolveDefaultApiBase() {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
 
@@ -255,4 +282,33 @@ export async function fetchModelStatus() {
     throw new Error('Unable to load model status');
   }
   return response.json();
+}
+
+export async function createGenerationJob(payload: {
+  queries: string[];
+  model?: string;
+  apiKey?: string;
+  prompt?: string;
+}): Promise<QueryGenerationJob> {
+  const response = await fetch(`${getApiBase()}/api/openrouter/jobs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const error = typeof body?.error === 'string' ? body.error : 'Unable to start OpenRouter job';
+    throw new Error(error);
+  }
+
+  return response.json();
+}
+
+export async function listGenerationJobs(): Promise<QueryGenerationJob[]> {
+  return getJson<QueryGenerationJob[]>('/api/openrouter/jobs');
+}
+
+export async function fetchGenerationJob(id: string): Promise<QueryGenerationJob> {
+  return getJson<QueryGenerationJob>(`/api/openrouter/jobs/${id}`);
 }
