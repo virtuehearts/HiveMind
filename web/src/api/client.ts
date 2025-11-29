@@ -67,6 +67,25 @@ export interface EmuMount {
   lastModified?: string;
 }
 
+export interface UploadChunkArtifacts {
+  id: string;
+  filename: string;
+  mimeType: string;
+  createdAt: string;
+  rawDir: string;
+  chunks: ScrapedChunkRecord[];
+  buildDir: string;
+  manifestPath: string;
+}
+
+export interface ScrapedChunkRecord {
+  url: string;
+  file: string;
+  bytes: number;
+  characters: number;
+  approxTokens: number;
+}
+
 export function resolveDefaultApiBase() {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
 
@@ -210,6 +229,24 @@ export async function uploadEmuArchive(formData: FormData) {
   }
 
   return response.json() as Promise<EmuMount>;
+}
+
+export async function chunkUpload(formData: FormData) {
+  const response = await fetch(`${getApiBase()}/api/ingest/upload`, { method: 'POST', body: formData });
+  let payload: unknown = null;
+
+  try {
+    payload = await response.json();
+  } catch (error) {
+    // ignore parse failures and fall back to generic message
+  }
+
+  if (!response.ok) {
+    const message = typeof payload === 'object' && payload && 'error' in payload ? (payload as { error?: string }).error : null;
+    throw new Error(message || 'Unable to chunk upload');
+  }
+
+  return payload as UploadChunkArtifacts;
 }
 
 export async function fetchModelStatus() {
