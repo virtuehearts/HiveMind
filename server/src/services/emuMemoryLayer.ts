@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { MemoryBlock, MemoryIndex, MemoryStatus, NewMemoryBlockPayload } from '../types';
+import { MemoryBlock, MemoryBlockUpdatePayload, MemoryIndex, MemoryStatus, NewMemoryBlockPayload } from '../types';
 
 const STOP_WORDS = new Set([
   'the',
@@ -54,12 +54,16 @@ interface MemoryLayerOptions {
   emuBasePath?: string;
 }
 
+type MetadataOverride = MemoryBlockUpdatePayload & { updatedAt?: string };
+
 export class EmuMemoryLayer {
   private storePath: string;
   private emuBasePath: string;
   private userBlocks: MemoryBlock[] = [];
   private emuBlocks: MemoryBlock[] = [];
   private index: MemoryIndex = { byIntent: {}, byTag: {} };
+  private hiddenBlockIds = new Set<string>();
+  private metadataOverrides: Record<string, MetadataOverride> = {};
 
   constructor(options?: MemoryLayerOptions) {
     this.storePath =
@@ -71,7 +75,70 @@ export class EmuMemoryLayer {
   }
 
   listBlocks(): MemoryBlock[] {
-    return this.getAllBlocks();
+    return this.getAllBlocks().sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : 1));
+  }
+
+  getBlock(id: string): MemoryBlock | null {
+    return this.getAllBlocks().find((block) => block.id === id) || null;
+  }
+
+  updateBlock(id: string, updates: MemoryBlockUpdatePayload): MemoryBlock {
+    const allowedUpdates: MemoryBlockUpdatePayload = {
+      title: updates.title?.trim(),
+      tags: this.normalizeStringList(updates.tags),
+      labels: this.normalizeStringList(updates.labels),
+      notes: updates.notes?.trim(),
+      genre: updates.genre?.trim(),
+      isPrivate: updates.isPrivate,
+      relevance: this.coerceScore(updates.relevance),
+      overallScore: this.coerceScore(updates.overallScore)
+    };
+
+    const cleanUpdate: MemoryBlockUpdatePayload = Object.fromEntries(
+      Object.entries(allowedUpdates).filter(([, value]) => value !== undefined)
+    ) as MemoryBlockUpdatePayload;
+
+    const inUserStore = this.userBlocks.find((block) => block.id === id);
+    if (inUserStore) {
+      Object.assign(inUserStore, cleanUpdate, { updatedAt: new Date().toISOString() });
+      this.rebuildIndex();
+      this.persist();
+      return this.applyOverrides(inUserStore);
+    }
+
+    const emuBlock = this.emuBlocks.find((block) => block.id === id);
+    if (!emuBlock) {
+      throw new Error('Memory block not found');
+    }
+
+    this.metadataOverrides[id] = {
+      ...this.metadataOverrides[id],
+      ...cleanUpdate,
+      updatedAt: new Date().toISOString()
+    };
+    this.rebuildIndex();
+    this.persist();
+    return this.applyOverrides(emuBlock);
+  }
+
+  deleteBlock(id: string): boolean {
+    const initialLength = this.userBlocks.length;
+    this.userBlocks = this.userBlocks.filter((block) => block.id !== id);
+    if (this.userBlocks.length !== initialLength) {
+      this.rebuildIndex();
+      this.persist();
+      return true;
+    }
+
+    const existsInEmu = this.emuBlocks.some((block) => block.id === id);
+    if (existsInEmu) {
+      this.hiddenBlockIds.add(id);
+      this.rebuildIndex();
+      this.persist();
+      return true;
+    }
+
+    return false;
   }
 
   getStatus(): MemoryStatus {
@@ -114,7 +181,9 @@ export class EmuMemoryLayer {
       throw new Error('Memory content is required');
     }
 
-    const classification = this.classify(content, payload.title, payload.tags);
+    const tags = this.normalizeStringList(payload.tags);
+    const labels = this.normalizeStringList(payload.labels);
+    const classification = this.classify(content, payload.title, tags);
     const timestamp = new Date().toISOString();
 
     const block: MemoryBlock = {
@@ -123,11 +192,18 @@ export class EmuMemoryLayer {
       content,
       intent: classification.intent,
       tags: classification.tags,
+      labels,
+      notes: payload.notes?.trim(),
+      genre: payload.genre?.trim(),
+      isPrivate: payload.isPrivate ?? true,
+      relevance: this.coerceScore(payload.relevance),
+      overallScore: this.coerceScore(payload.overallScore),
       source: payload.source || 'personal',
       createdAt: timestamp,
       updatedAt: timestamp,
       summary: classification.summary,
-      score: classification.score
+      score: classification.score,
+      size: Buffer.byteLength(content, 'utf-8')
     };
 
     this.userBlocks = [block, ...this.userBlocks];
@@ -165,7 +241,20 @@ export class EmuMemoryLayer {
   }
 
   private getAllBlocks(): MemoryBlock[] {
-    return [...this.emuBlocks, ...this.userBlocks];
+    return [...this.emuBlocks, ...this.userBlocks]
+      .filter((block) => !this.hiddenBlockIds.has(block.id))
+      .map((block) => this.applyOverrides(block));
+  }
+
+  private applyOverrides(block: MemoryBlock): MemoryBlock {
+    const override = this.metadataOverrides[block.id];
+    const merged = override ? { ...block, ...override } : block;
+    return {
+      ...merged,
+      size: Buffer.byteLength(merged.content, 'utf-8'),
+      tags: this.normalizeStringList(merged.tags),
+      labels: this.normalizeStringList(merged.labels)
+    };
   }
 
   private classify(content: string, title?: string, userTags?: string[]): Classification {
@@ -247,7 +336,12 @@ export class EmuMemoryLayer {
   private persist() {
     const dir = path.dirname(this.storePath);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(this.storePath, JSON.stringify({ blocks: this.userBlocks }, null, 2), 'utf-8');
+    const payload = {
+      blocks: this.userBlocks,
+      overrides: this.metadataOverrides,
+      hidden: Array.from(this.hiddenBlockIds)
+    };
+    fs.writeFileSync(this.storePath, JSON.stringify(payload, null, 2), 'utf-8');
   }
 
   private load() {
@@ -261,6 +355,8 @@ export class EmuMemoryLayer {
       const raw = fs.readFileSync(this.storePath, 'utf-8');
       const parsed = JSON.parse(raw);
       this.userBlocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
+      this.metadataOverrides = parsed.overrides || {};
+      this.hiddenBlockIds = new Set<string>(parsed.hidden || []);
     } catch (error) {
       console.warn('Failed to load EMU memory store, starting empty.', error);
       this.userBlocks = [];
@@ -293,6 +389,7 @@ export class EmuMemoryLayer {
       const emuId = meta.id || entry.name.replace(/\.emu$/, '');
       const baseTitle = meta.name || emuId;
       const tags = Array.isArray(meta.tags) ? meta.tags : [];
+      const labels = Array.isArray(meta.tags) ? meta.tags : [];
 
       blocks.forEach((chunk, index) => {
         const classification = this.classify(chunk, baseTitle, tags);
@@ -302,11 +399,13 @@ export class EmuMemoryLayer {
           content: chunk,
           intent: classification.intent,
           tags: Array.from(new Set([...classification.tags, ...tags])),
+          labels,
           source: `emu:${emuId}`,
           createdAt: timestamp,
           updatedAt: timestamp,
           summary: classification.summary,
-          score: Math.max(classification.score, meta.benchmarkScore || 0)
+          score: Math.max(classification.score, meta.benchmarkScore || 0),
+          size: Buffer.byteLength(chunk, 'utf-8')
         });
       });
     }
@@ -367,5 +466,22 @@ export class EmuMemoryLayer {
     }
 
     return chunks;
+  }
+
+  private normalizeStringList(value?: string[] | string): string[] {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      return value.map((entry) => entry.trim()).filter(Boolean);
+    }
+
+    return value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  private coerceScore(value?: number): number | undefined {
+    if (value === undefined || value === null || Number.isNaN(value)) return undefined;
+    return Math.max(0, Math.min(1, Number(value)));
   }
 }

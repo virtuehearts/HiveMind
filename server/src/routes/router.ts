@@ -1,8 +1,11 @@
 import { Router } from 'express';
+import multer from 'multer';
+import { gzipSync } from 'zlib';
 import { config } from '../config';
 import { EmuMemoryLayer } from '../services/emuMemoryLayer';
 import { OllamaClient } from '../services/ollamaClient';
-import { NewMemoryBlockPayload, RouterRequestBody } from '../types';
+import { MemoryBlockUpdatePayload, NewMemoryBlockPayload, RouterRequestBody } from '../types';
+import pdfParse from 'pdf-parse';
 
 const router = Router();
 const ollama = new OllamaClient();
@@ -10,6 +13,7 @@ const memoryLayer = new EmuMemoryLayer({
   storePath: config.memoryStorePath,
   emuBasePath: config.emuBasePath
 });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 router.get('/model', async (_req, res) => {
   const available = await ollama.checkModelAvailability(config.routerModel);
@@ -24,6 +28,15 @@ router.get('/memory/blocks', (_req, res) => {
   res.json(memoryLayer.listBlocks());
 });
 
+router.get('/memory/blocks/:id', (req, res) => {
+  const block = memoryLayer.getBlock(req.params.id);
+  if (!block) {
+    return res.status(404).json({ error: 'Memory block not found' });
+  }
+
+  res.json(block);
+});
+
 router.post('/memory/blocks', (req, res) => {
   const payload = req.body as NewMemoryBlockPayload;
   if (!payload?.content) {
@@ -36,6 +49,82 @@ router.post('/memory/blocks', (req, res) => {
   } catch (error) {
     console.error('Unable to store memory block', error);
     res.status(500).json({ error: 'Failed to store memory block' });
+  }
+});
+
+router.patch('/memory/blocks/:id', (req, res) => {
+  const updates = req.body as MemoryBlockUpdatePayload;
+  try {
+    const block = memoryLayer.updateBlock(req.params.id, updates);
+    res.json(block);
+  } catch (error) {
+    console.error('Unable to update memory block', error);
+    res.status(404).json({ error: 'Memory block not found' });
+  }
+});
+
+router.delete('/memory/blocks/:id', (req, res) => {
+  const removed = memoryLayer.deleteBlock(req.params.id);
+  if (!removed) {
+    return res.status(404).json({ error: 'Memory block not found' });
+  }
+
+  res.json({ ok: true });
+});
+
+router.get('/memory/blocks/:id/export', (req, res) => {
+  const block = memoryLayer.getBlock(req.params.id);
+  if (!block) {
+    return res.status(404).json({ error: 'Memory block not found' });
+  }
+
+  const payload = JSON.stringify(block, null, 2);
+  const archive = gzipSync(payload);
+  const safeName = `${block.title || block.id}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 64);
+
+  res.setHeader('Content-Type', 'application/gzip');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName || block.id}.json.gz"`);
+  res.send(archive);
+});
+
+router.post('/memory/import', upload.single('file'), async (req, res) => {
+  const file = req.file;
+  if (!file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  const title = req.body.title?.trim();
+  const tags = req.body.tags?.trim();
+
+  try {
+    let content = '';
+
+    if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
+      const parsed = await pdfParse(file.buffer);
+      content = parsed.text;
+    } else {
+      content = file.buffer.toString('utf-8');
+    }
+
+    if (!content.trim()) {
+      return res.status(400).json({ error: 'File did not contain readable text' });
+    }
+
+    const block = memoryLayer.addBlock({
+      title: title || file.originalname,
+      content,
+      source: `upload:${file.originalname}`,
+      tags: tags ? tags.split(',').map((tag: string) => tag.trim()).filter(Boolean) : undefined
+    });
+
+    res.json(block);
+  } catch (error) {
+    console.error('Failed to import memory file', error);
+    res.status(500).json({ error: 'Unable to import document into EMU memory' });
   }
 });
 
