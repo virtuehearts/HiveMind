@@ -81,3 +81,14 @@ export interface MemoryStatus {
   lastUpdated: string | null;
   index: MemoryIndex;
 }
+
+export interface EmuMount {
+  id: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  path: string;
+  blockCount: number;
+  sizeBytes?: number;
+  lastModified?: string;
+}

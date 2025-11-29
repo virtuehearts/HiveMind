@@ -1,7 +1,15 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { MemoryBlock, MemoryBlockUpdatePayload, MemoryIndex, MemoryStatus, NewMemoryBlockPayload } from '../types';
+import {
+  EmuMount,
+  MemoryBlock,
+  MemoryBlockUpdatePayload,
+  MemoryIndex,
+  MemoryStatus,
+  NewMemoryBlockPayload
+} from '../types';
+import AdmZip from 'adm-zip';
 
 const STOP_WORDS = new Set([
   'the',
@@ -61,6 +69,7 @@ export class EmuMemoryLayer {
   private emuBasePath: string;
   private userBlocks: MemoryBlock[] = [];
   private emuBlocks: MemoryBlock[] = [];
+  private emuMounts: EmuMount[] = [];
   private index: MemoryIndex = { byIntent: {}, byTag: {} };
   private hiddenBlockIds = new Set<string>();
   private metadataOverrides: Record<string, MetadataOverride> = {};
@@ -70,6 +79,15 @@ export class EmuMemoryLayer {
       options?.storePath || path.resolve(process.cwd(), '.hivemind', 'emu-memory.json');
     this.emuBasePath = options?.emuBasePath || path.resolve(process.cwd(), 'emus');
     this.load();
+    this.loadEmuMounts();
+    this.rebuildIndex();
+  }
+
+  listEmuMounts(): EmuMount[] {
+    return [...this.emuMounts].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  refreshEmuMounts() {
     this.loadEmuMounts();
     this.rebuildIndex();
   }
@@ -240,6 +258,91 @@ export class EmuMemoryLayer {
     return scored;
   }
 
+  exportEmuArchive(id: string): { filename: string; buffer: Buffer } {
+    const mount = this.emuMounts.find(
+      (entry) => entry.id === id || path.basename(entry.path).replace(/\.emu$/, '') === id
+    );
+
+    if (!mount) {
+      throw new Error('EMU not found');
+    }
+
+    if (!fs.existsSync(mount.path)) {
+      throw new Error('EMU directory is missing on disk');
+    }
+
+    const folderName = path.basename(mount.path);
+    const zip = new AdmZip();
+    zip.addLocalFolder(mount.path, folderName);
+
+    return { filename: `${folderName}.zip`, buffer: zip.toBuffer() };
+  }
+
+  importEmuArchive(buffer: Buffer, originalName?: string): EmuMount {
+    const zip = new AdmZip(buffer);
+    const entries = zip.getEntries();
+
+    if (!entries.length) {
+      throw new Error('Archive was empty');
+    }
+
+    const rootCandidates = new Set<string>(
+      entries
+        .map((entry: AdmZip.IZipEntry) => entry.entryName.replace(/\\/g, '/').split('/')[0] || '')
+        .filter((name): name is string => Boolean(name))
+    );
+
+    let targetFolder: string | undefined = Array.from(rootCandidates).find((name) => name.endsWith('.emu'));
+    if (!targetFolder) {
+      const safeBase = (originalName?.replace(/\.(zip|emu)$/i, '') || 'upload').replace(
+        /[^a-zA-Z0-9_-]/g,
+        '-'
+      );
+      targetFolder = `${safeBase}.emu`;
+    }
+
+    targetFolder = targetFolder.replace(/[^a-zA-Z0-9._-]/g, '-');
+    if (!targetFolder.endsWith('.emu')) {
+      targetFolder = `${targetFolder}.emu`;
+    }
+
+    const destRoot = path.join(this.emuBasePath, targetFolder);
+    fs.mkdirSync(this.emuBasePath, { recursive: true });
+    fs.rmSync(destRoot, { recursive: true, force: true });
+
+    for (const entry of entries) {
+      const normalized = entry.entryName.replace(/\\/g, '/');
+      if (normalized.includes('..')) {
+        throw new Error('EMU archive contains invalid paths');
+      }
+
+      const relativePath = normalized.startsWith(targetFolder)
+        ? normalized
+        : path.join(targetFolder, normalized);
+      const destPath = path.join(this.emuBasePath, relativePath);
+
+      if (entry.isDirectory) {
+        fs.mkdirSync(destPath, { recursive: true });
+        continue;
+      }
+
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.writeFileSync(destPath, entry.getData());
+    }
+
+    this.refreshEmuMounts();
+    const folderId = targetFolder.replace(/\.emu$/, '');
+    const mounted =
+      this.emuMounts.find((mount) => mount.id === folderId) ||
+      this.emuMounts.find((mount) => path.basename(mount.path) === targetFolder);
+
+    if (!mounted) {
+      throw new Error('EMU was extracted but could not be indexed');
+    }
+
+    return mounted;
+  }
+
   private getAllBlocks(): MemoryBlock[] {
     return [...this.emuBlocks, ...this.userBlocks]
       .filter((block) => !this.hiddenBlockIds.has(block.id))
@@ -366,6 +469,7 @@ export class EmuMemoryLayer {
 
   private loadEmuMounts() {
     this.emuBlocks = [];
+    this.emuMounts = [];
     if (!fs.existsSync(this.emuBasePath)) return;
 
     const entries = fs.readdirSync(this.emuBasePath, { withFileTypes: true });
@@ -391,8 +495,12 @@ export class EmuMemoryLayer {
       const tags = Array.isArray(meta.tags) ? meta.tags : [];
       const labels = Array.isArray(meta.tags) ? meta.tags : [];
 
+      let blockCount = 0;
+      let totalSize = 0;
+
       blocks.forEach((chunk, index) => {
         const classification = this.classify(chunk, baseTitle, tags);
+        const chunkSize = Buffer.byteLength(chunk, 'utf-8');
         this.emuBlocks.push({
           id: `emu-${emuId}-${index}`,
           title: `${baseTitle} #${index + 1}`,
@@ -405,8 +513,23 @@ export class EmuMemoryLayer {
           updatedAt: timestamp,
           summary: classification.summary,
           score: Math.max(classification.score, meta.benchmarkScore || 0),
-          size: Buffer.byteLength(chunk, 'utf-8')
+          size: chunkSize
         });
+
+        blockCount += 1;
+        totalSize += chunkSize;
+      });
+
+      const emuStats = fs.statSync(emuPath);
+      this.emuMounts.push({
+        id: emuId,
+        name: baseTitle,
+        description: meta.description,
+        tags,
+        path: emuPath,
+        blockCount,
+        sizeBytes: totalSize,
+        lastModified: emuStats.mtime.toISOString()
       });
     }
   }

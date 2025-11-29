@@ -1,13 +1,17 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
+  EmuMount,
   MemoryBlock,
   MemoryBlockUpdate,
   MemoryStatus,
   deleteMemoryBlock,
+  downloadEmuArchive,
   exportMemoryBlock,
   fetchMemoryBlocks,
+  fetchEmuMounts,
   fetchMemoryStatus,
   importMemoryDocument,
+  uploadEmuArchive,
   updateMemoryBlock
 } from '../api/client';
 
@@ -43,24 +47,32 @@ const MemoryManagerPage = () => {
   const [uploadTags, setUploadTags] = useState('');
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [emuMounts, setEmuMounts] = useState<EmuMount[]>([]);
+  const [emuUploadFile, setEmuUploadFile] = useState<File | null>(null);
+  const [uploadingEmu, setUploadingEmu] = useState(false);
 
   const [draft, setDraft] = useState<MemoryBlockUpdate>({});
 
-  useEffect(() => {
-    const bootstrap = async () => {
-      try {
-        const [metadata, existing] = await Promise.all([fetchMemoryStatus(), fetchMemoryBlocks()]);
-        setStatus(metadata);
-        setBlocks(existing);
-        if (existing.length) {
-          setSelectedId(existing[0].id);
-        }
-      } catch (error) {
-        console.warn('Unable to load memory manager', error);
+  const loadMemory = async () => {
+    try {
+      const [metadata, existing, emus] = await Promise.all([
+        fetchMemoryStatus(),
+        fetchMemoryBlocks(),
+        fetchEmuMounts()
+      ]);
+      setStatus(metadata);
+      setBlocks(existing);
+      setEmuMounts(emus);
+      if (!selectedId || !existing.some((entry) => entry.id === selectedId)) {
+        setSelectedId(existing[0]?.id || null);
       }
-    };
+    } catch (error) {
+      console.warn('Unable to load memory manager', error);
+    }
+  };
 
-    bootstrap();
+  useEffect(() => {
+    loadMemory();
   }, []);
 
   useEffect(() => {
@@ -176,6 +188,44 @@ const MemoryManagerPage = () => {
       setToast('Unable to import document');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleEmuDownload = async (mount: EmuMount) => {
+    try {
+      const blob = await downloadEmuArchive(mount.id);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${mount.name || mount.id}.zip`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      setToast('Downloaded EMU archive');
+    } catch (error) {
+      console.error(error);
+      setToast('Unable to download EMU archive');
+    }
+  };
+
+  const handleEmuUpload = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!emuUploadFile || uploadingEmu) return;
+
+    setUploadingEmu(true);
+    try {
+      const form = new FormData();
+      form.append('file', emuUploadFile);
+      await uploadEmuArchive(form);
+      setEmuUploadFile(null);
+      const input = document.getElementById('emu-upload') as HTMLInputElement | null;
+      if (input) input.value = '';
+      await loadMemory();
+      setToast('EMU uploaded and mounted');
+    } catch (error) {
+      console.error(error);
+      setToast('Unable to upload EMU');
+    } finally {
+      setUploadingEmu(false);
     }
   };
 
@@ -416,6 +466,75 @@ const MemoryManagerPage = () => {
             </span>
           </div>
         </form>
+      </div>
+
+      <div className="import-card">
+        <div>
+          <p className="eyebrow">EMU portability</p>
+          <h3>Manage mounted .emu packages</h3>
+          <p className="muted">
+            Download the EMUs that Ollama is using on the server, or upload new ones to mount and index instantly.
+          </p>
+        </div>
+
+        <div className="import-grid">
+          <div>
+            <ul className="block-list">
+              {emuMounts.map((mount) => (
+                <li key={mount.id} className="block-row">
+                  <div>
+                    <strong>{mount.name}</strong>
+                    <p className="snippet">{mount.description || mount.path}</p>
+                    <div className="tag-row">
+                      <span className="tag-pill">{mount.blockCount} blocks</span>
+                      {mount.tags.slice(0, 3).map((tag) => (
+                        <span key={`${mount.id}-${tag}`} className="tag-pill">
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="meta-list small">
+                    {mount.sizeBytes && <span className="muted">{formatSize(mount.sizeBytes)}</span>}
+                    {mount.lastModified && <span className="muted">{formatTimestamp(mount.lastModified)}</span>}
+                    <button type="button" className="ghost" onClick={() => handleEmuDownload(mount)}>
+                      Download
+                    </button>
+                  </div>
+                </li>
+              ))}
+              {!emuMounts.length && (
+                <li className="muted" style={{ listStyle: 'none', padding: '12px 0' }}>
+                  No EMUs mounted yet.
+                </li>
+              )}
+            </ul>
+          </div>
+
+          <form className="import-grid" onSubmit={handleEmuUpload}>
+            <label>
+              <span className="eyebrow">EMU archive</span>
+              <input
+                id="emu-upload"
+                type="file"
+                accept=".zip,.emu"
+                onChange={(event) => setEmuUploadFile(event.target.files?.[0] || null)}
+              />
+            </label>
+            <div className="action-row">
+              <button type="submit" disabled={!emuUploadFile || uploadingEmu}>
+                {uploadingEmu ? 'Uploading…' : 'Upload and mount'}
+              </button>
+              <button type="button" className="ghost" onClick={() => loadMemory()}>
+                Refresh
+              </button>
+            </div>
+            <p className="muted small">
+              Upload zipped `.emu` folders to add them to the server. Downloads keep folder structure intact so you can bring memory
+              capsules to your laptop.
+            </p>
+          </form>
+        </div>
       </div>
 
       {toast && (
