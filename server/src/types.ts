@@ -92,3 +92,35 @@ export interface EmuMount {
   sizeBytes?: number;
   lastModified?: string;
 }
+
+export type ScrapeJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface ScrapedChunkRecord {
+  url: string;
+  file: string;
+  bytes: number;
+  characters: number;
+  approxTokens: number;
+}
+
+export interface ScrapeJobArtifacts {
+  jobId: string;
+  name?: string;
+  createdAt: string;
+  updatedAt: string;
+  urls: string[];
+  rawDir: string;
+  chunks: ScrapedChunkRecord[];
+}
+
+export interface ScrapeJob {
+  id: string;
+  name?: string;
+  urls: string[];
+  status: ScrapeJobStatus;
+  createdAt: string;
+  updatedAt: string;
+  artifacts?: ScrapeJobArtifacts & { buildDir: string; manifestPath: string };
+  error?: string;
+  warnings?: string[];
+}
