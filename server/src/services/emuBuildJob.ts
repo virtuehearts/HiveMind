@@ -232,7 +232,7 @@ export class EmuBuildJobManager {
       chunk_count: rows.length,
       dataset_size_bytes: totalBytes,
       notesPath: 'notes.md',
-      lanceDbPath: path.relative(process.cwd(), lancePath)
+      lanceDbPath: 'lancedb'
     };
 
     const notesBody = ['# EMU training notes', '', ...noteSections].join('\n\n');
