@@ -56,6 +56,17 @@ export interface MemoryStatus {
   index?: { byIntent: Record<string, string[]>; byTag: Record<string, string[]> };
 }
 
+export interface EmuMount {
+  id: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  path: string;
+  blockCount: number;
+  sizeBytes?: number;
+  lastModified?: string;
+}
+
 export function resolveDefaultApiBase() {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
 
@@ -178,6 +189,27 @@ export async function importMemoryDocument(formData: FormData) {
   }
 
   return response.json() as Promise<MemoryBlock>;
+}
+
+export function fetchEmuMounts() {
+  return getJson<EmuMount[]>('/api/emus');
+}
+
+export async function downloadEmuArchive(id: string) {
+  const response = await fetch(`${getApiBase()}/api/emus/${id}/download`);
+  if (!response.ok) {
+    throw new Error('Unable to download EMU archive');
+  }
+  return response.blob();
+}
+
+export async function uploadEmuArchive(formData: FormData) {
+  const response = await fetch(`${getApiBase()}/api/emus/upload`, { method: 'POST', body: formData });
+  if (!response.ok) {
+    throw new Error('Unable to upload EMU archive');
+  }
+
+  return response.json() as Promise<EmuMount>;
 }
 
 export async function fetchModelStatus() {

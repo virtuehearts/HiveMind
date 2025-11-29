@@ -14,6 +14,7 @@ const memoryLayer = new EmuMemoryLayer({
   emuBasePath: config.emuBasePath
 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const emuUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 
 router.get('/model', async (_req, res) => {
   const available = await ollama.checkModelAvailability(config.routerModel);
@@ -26,6 +27,10 @@ router.get('/memory/status', (_req, res) => {
 
 router.get('/memory/blocks', (_req, res) => {
   res.json(memoryLayer.listBlocks());
+});
+
+router.get('/emus', (_req, res) => {
+  res.json(memoryLayer.listEmuMounts());
 });
 
 router.get('/memory/blocks/:id', (req, res) => {
@@ -125,6 +130,33 @@ router.post('/memory/import', upload.single('file'), async (req, res) => {
   } catch (error) {
     console.error('Failed to import memory file', error);
     res.status(500).json({ error: 'Unable to import document into EMU memory' });
+  }
+});
+
+router.get('/emus/:id/download', (req, res) => {
+  try {
+    const archive = memoryLayer.exportEmuArchive(req.params.id);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${archive.filename}"`);
+    res.send(archive.buffer);
+  } catch (error) {
+    console.error('Unable to export EMU archive', error);
+    res.status(404).json({ error: 'EMU not found or could not be packaged' });
+  }
+});
+
+router.post('/emus/upload', emuUpload.single('file'), (req, res) => {
+  const file = req.file;
+  if (!file) {
+    return res.status(400).json({ error: 'No EMU archive uploaded' });
+  }
+
+  try {
+    const mount = memoryLayer.importEmuArchive(file.buffer, file.originalname);
+    res.json(mount);
+  } catch (error) {
+    console.error('Failed to ingest EMU archive', error);
+    res.status(400).json({ error: 'Unable to import EMU archive' });
   }
 });
 
