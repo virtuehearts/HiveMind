@@ -17,6 +17,7 @@ const AppLayout = () => {
           </NavLink>
           <NavLink to="/memory">Memories</NavLink>
           <NavLink to="/training">Training</NavLink>
+          <NavLink to="/settings">Settings</NavLink>
         </nav>
       </header>
       <main>
