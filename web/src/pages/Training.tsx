@@ -1,4 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react';
+import { chunkUpload, UploadChunkArtifacts } from '../api/client';
 
 const promptPresets = [
   { value: 'summaries', label: 'Summaries + key facts', description: 'Generate tight summaries and pull out high-signal facts.' },
@@ -34,6 +35,9 @@ const TrainingPage = () => {
   const [chunkSize, setChunkSize] = useState(1200);
   const [overlap, setOverlap] = useState(120);
   const [buildTag, setBuildTag] = useState('latest');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [chunkResult, setChunkResult] = useState<UploadChunkArtifacts | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [stepStatus, setStepStatus] = useState<Record<StepKey, string>>({
     ingest: 'Pending',
@@ -59,22 +63,48 @@ const TrainingPage = () => {
     ]);
   };
 
-  const handleUpload = (event: FormEvent) => {
+  const handleUpload = async (event: FormEvent) => {
     event.preventDefault();
-    if (!uploadFile && !uploadNotes.trim()) {
-      addLog('ingest', 'Skipped: add a PDF/text file or paste raw text to ingest.');
+    setUploadError('');
+    setChunkResult(null);
+
+    if (!uploadFile) {
+      setUploadError('Attach a PDF or text file to ingest.');
+      addLog('ingest', 'Upload blocked: no file attached.');
       return;
     }
 
+    const isPdf = uploadFile.type === 'application/pdf' || uploadFile.name.toLowerCase().endsWith('.pdf');
+    const isText = uploadFile.type.startsWith('text/') || /\.(txt|md|markdown)$/i.test(uploadFile.name);
+
+    if (!isPdf && !isText) {
+      setUploadError('Only PDF or text uploads are supported right now.');
+      addLog('ingest', `Upload blocked: ${uploadFile.name} is not PDF/text.`);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', uploadFile);
+    if (ingestTitle.trim()) formData.append('title', ingestTitle.trim());
+    if (uploadNotes.trim()) formData.append('notes', uploadNotes.trim());
+
+    setUploading(true);
     setStepStatus((prev) => ({ ...prev, ingest: 'Processing' }));
-    addLog(
-      'ingest',
-      `Queued ${uploadFile ? uploadFile.name : 'pasted text'} for EMU ingestion${ingestTitle ? ` as “${ingestTitle}”` : ''}.`
-    );
-    setTimeout(() => {
+    addLog('ingest', `Chunking ${uploadFile.name}…`);
+
+    try {
+      const result = await chunkUpload(formData);
+      setChunkResult(result);
       setStepStatus((prev) => ({ ...prev, ingest: 'Complete', enrich: 'Ready' }));
-      addLog('enrich', 'Chunks hydrated. Prompt ready for enrichment.');
-    }, 150);
+      addLog('enrich', `Chunks ready (${result.chunks.length} sections, ${result.mimeType}).`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to chunk upload';
+      setUploadError(message);
+      setStepStatus((prev) => ({ ...prev, ingest: 'Failed' }));
+      addLog('ingest', `Upload failed: ${message}`);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleCrawl = (event: FormEvent) => {
@@ -222,11 +252,52 @@ const TrainingPage = () => {
               />
             </label>
             <div className="action-row full-width">
-              <button type="submit">Queue ingestion</button>
+              <button type="submit" disabled={uploading}>
+                {uploading ? 'Uploading…' : 'Queue ingestion'}
+              </button>
               <button type="button" className="ghost" onClick={() => setUploadNotes('')}>
                 Clear text
               </button>
             </div>
+            {uploadError && (
+              <p className="error" style={{ margin: '0 0 6px' }}>
+                {uploadError}
+              </p>
+            )}
+            {chunkResult && (
+              <div className="chunk-results full-width">
+                <div className="emu-card-header">
+                  <div>
+                    <p className="eyebrow">Chunk output</p>
+                    <strong>
+                      {chunkResult.chunks.length} sections saved to {chunkResult.rawDir}
+                    </strong>
+                    <p className="muted">
+                      Files include source metadata (filename + MIME) before the text body.
+                    </p>
+                  </div>
+                  <span className="badge ghost">{chunkResult.mimeType}</span>
+                </div>
+                <ul className="chunk-list">
+                  {chunkResult.chunks.map((chunk) => (
+                    <li key={chunk.file} className="chunk-row">
+                      <div>
+                        <strong>{chunk.file}</strong>
+                        <p className="muted small">{chunk.url}</p>
+                        <div className="tag-row">
+                          <span className="tag-pill">~{chunk.approxTokens} tokens</span>
+                          <span className="tag-pill">{chunk.characters} chars</span>
+                        </div>
+                      </div>
+                      <div className="meta-list small" style={{ textAlign: 'right' }}>
+                        <span className="muted">{(chunk.bytes / 1024).toFixed(1)} KB</span>
+                        <span className="muted">{chunkResult.buildDir}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </form>
         </div>
 

@@ -113,6 +113,15 @@ export interface ScrapeJobArtifacts {
   chunks: ScrapedChunkRecord[];
 }
 
+export interface UploadChunkArtifacts {
+  id: string;
+  filename: string;
+  mimeType: string;
+  createdAt: string;
+  rawDir: string;
+  chunks: ScrapedChunkRecord[];
+}
+
 export interface ScrapeJob {
   id: string;
   name?: string;

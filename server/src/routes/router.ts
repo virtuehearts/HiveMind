@@ -1,15 +1,20 @@
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { Router } from 'express';
 import multer from 'multer';
 import { gzipSync } from 'zlib';
 import { config } from '../config';
 import { EmuMemoryLayer } from '../services/emuMemoryLayer';
+import { TOKEN_CHAR_RATIO, chunkText } from '../services/textChunker';
 import { OllamaClient } from '../services/ollamaClient';
 import { scrapeJobManager } from '../services/scrapeJob';
 import {
   MemoryBlockUpdatePayload,
   NewMemoryBlockPayload,
   RouterRequestBody,
-  ScrapeJob
+  ScrapeJob,
+  UploadChunkArtifacts
 } from '../types';
 import pdfParse from 'pdf-parse';
 
@@ -21,6 +26,7 @@ const memoryLayer = new EmuMemoryLayer({
 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 const emuUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
+const uploadBuildRoot = path.resolve(process.cwd(), '.hivemind', 'uploads');
 
 const formatScrapeJob = (job: ScrapeJob) => ({
   id: job.id,
@@ -79,6 +85,89 @@ router.get('/scrape/:jobId', (req, res) => {
   }
 
   res.json(formatScrapeJob(job));
+});
+
+router.post('/ingest/upload', upload.single('file'), async (req, res) => {
+  const file = req.file;
+  if (!file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  const isPdf = file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf');
+  const isText = /^text\//.test(file.mimetype) || /\.(txt|md|markdown)$/i.test(file.originalname);
+
+  if (!isPdf && !isText) {
+    return res.status(415).json({ error: 'Only PDF or text uploads are supported' });
+  }
+
+  try {
+    let rawText = '';
+
+    if (isPdf) {
+      const parsed = await pdfParse(file.buffer);
+      rawText = parsed.text;
+    } else {
+      rawText = file.buffer.toString('utf-8');
+    }
+
+    const cleaned = rawText.trim();
+    if (!cleaned) {
+      return res.status(400).json({ error: 'Uploaded file did not contain readable text' });
+    }
+
+    const chunks = chunkText(cleaned);
+    if (!chunks.length) {
+      return res.status(400).json({ error: 'No chunks were generated from the upload' });
+    }
+
+    const id = crypto.randomUUID();
+    const buildDir = path.join(uploadBuildRoot, id);
+    const rawDir = path.join(buildDir, 'raw');
+    await fs.promises.mkdir(rawDir, { recursive: true });
+
+    const chunkRecords: UploadChunkArtifacts['chunks'] = [];
+    let chunkIndex = 1;
+    const mimeType = file.mimetype || 'application/octet-stream';
+
+    for (const chunk of chunks) {
+      const filename = `chunk-${String(chunkIndex).padStart(4, '0')}.txt`;
+      const filePath = path.join(rawDir, filename);
+      const content = `Source: ${file.originalname}\nMIME: ${mimeType}\n\n${chunk.trim()}\n`;
+      await fs.promises.writeFile(filePath, content, 'utf8');
+      const stats = await fs.promises.stat(filePath);
+
+      chunkRecords.push({
+        url: file.originalname,
+        file: path.relative(buildDir, filePath),
+        bytes: stats.size,
+        characters: content.length,
+        approxTokens: Math.round(content.length / TOKEN_CHAR_RATIO)
+      });
+
+      chunkIndex += 1;
+    }
+
+    const manifest: UploadChunkArtifacts = {
+      id,
+      filename: file.originalname,
+      mimeType,
+      createdAt: new Date().toISOString(),
+      rawDir: path.relative(process.cwd(), rawDir),
+      chunks: chunkRecords
+    };
+
+    const manifestPath = path.join(buildDir, 'manifest.json');
+    await fs.promises.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+
+    res.json({
+      ...manifest,
+      buildDir: path.relative(process.cwd(), buildDir),
+      manifestPath: path.relative(process.cwd(), manifestPath)
+    });
+  } catch (error) {
+    console.error('Failed to chunk upload', error);
+    res.status(500).json({ error: 'Failed to process upload' });
+  }
 });
 
 router.get('/memory/blocks/:id', (req, res) => {
