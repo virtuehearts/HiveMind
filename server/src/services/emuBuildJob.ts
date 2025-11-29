@@ -5,7 +5,16 @@ import AdmZip from 'adm-zip';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { config } from '../config';
-import { EmuBuildJob, EmuBuildLog, EmuBuildMetadata, UploadChunkArtifacts } from '../types';
+import {
+  EmuBuildArtifacts,
+  EmuBuildInputs,
+  EmuBuildJob,
+  EmuBuildLog,
+  EmuBuildMetadata,
+  EmuBuildStepKey,
+  EmuBuildStepStatus,
+  UploadChunkArtifacts
+} from '../types';
 import { TOKEN_CHAR_RATIO } from './textChunker';
 
 const execFileAsync = promisify(execFile);
@@ -26,6 +35,7 @@ interface LanceDBModule {
 export class EmuBuildJobManager {
   private jobs = new Map<string, EmuBuildJob>();
   private embeddingPipeline: Promise<any> | null = null;
+  private subscribers = new Set<(job: EmuBuildJob) => void>();
 
   listJobs(): EmuBuildJob[] {
     return Array.from(this.jobs.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -48,13 +58,29 @@ export class EmuBuildJobManager {
     }
 
     const name = this.sanitizeName(request.name || manifest.filename || 'dataset');
-    const job: EmuBuildJob = {
-      id: `build-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 6)}`,
-      name,
+    const jobIdFragment = `build-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 6)}`;
+    const buildDir = path.join(config.buildOutputPath, jobIdFragment);
+    const inputs: EmuBuildInputs = {
       manifestPath: path.relative(process.cwd(), manifestPath),
+      name,
+      trainedBy: request.trainedBy,
+      queryPrompts: request.queryPrompts,
+      signArtifacts: request.signArtifacts
+    };
+
+    const artifacts: EmuBuildArtifacts = {
+      buildDir: path.relative(process.cwd(), buildDir),
+      manifestPath: path.relative(process.cwd(), manifestPath)
+    };
+    const job: EmuBuildJob = {
+      id: jobIdFragment,
+      name,
       status: 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      inputs,
+      artifacts,
+      steps: this.initializeSteps(),
       logs: []
     };
 
@@ -65,36 +91,41 @@ export class EmuBuildJobManager {
 
   getArchivePath(id: string): string | null {
     const job = this.jobs.get(id);
-    if (!job?.archivePath) return null;
-    const absPath = path.resolve(process.cwd(), job.archivePath);
+    const archivePath = job?.artifacts.archivePath;
+    if (!archivePath) return null;
+    const absPath = path.resolve(process.cwd(), archivePath);
     return fs.existsSync(absPath) ? absPath : null;
   }
 
   getMetadataPath(id: string): string | null {
     const job = this.jobs.get(id);
-    if (!job?.metadataPath) return null;
-    const absPath = path.resolve(process.cwd(), job.metadataPath);
+    const metadataPath = job?.artifacts.metadataPath;
+    if (!metadataPath) return null;
+    const absPath = path.resolve(process.cwd(), metadataPath);
     return fs.existsSync(absPath) ? absPath : null;
   }
 
   private async processJob(job: EmuBuildJob, manifest: UploadChunkArtifacts, request: BuildRequest) {
+    const buildRoot = path.join(config.buildOutputPath, job.id);
+    const emuFolderName = `${job.name}.emu`;
+    const emuFolder = path.join(buildRoot, emuFolderName);
+    const lancePath = path.join(emuFolder, 'lancedb');
+
     try {
       job.status = 'running';
-      this.touch(job, { step: 'init', message: 'Preparing build workspace' });
+      job.startedAt = new Date().toISOString();
+      this.startStep(job, 'init', 'Preparing build workspace');
 
-      const buildRoot = path.join(config.buildOutputPath, job.id);
-      const emuFolderName = `${job.name}.emu`;
-      const emuFolder = path.join(buildRoot, emuFolderName);
-      const lancePath = path.join(emuFolder, 'lancedb');
       await fs.promises.rm(buildRoot, { recursive: true, force: true });
       await fs.promises.mkdir(emuFolder, { recursive: true });
+      this.finishStep(job, 'init', 'Build workspace ready');
 
+      this.startStep(job, 'embed', 'Embedding chunks into LanceDB');
       const { rows, totalTokens, totalBytes, sourceUrls, noteSections } = await this.embedChunks(
         manifest,
         emuFolder
       );
-
-      this.touch(job, { step: 'embedding', message: `Embedded ${rows.length} chunks into LanceDB` });
+      this.finishStep(job, 'embed', `Embedded ${rows.length} chunks into LanceDB`);
 
       const metadata = await this.writeOutputs({
         emuFolder,
@@ -110,18 +141,26 @@ export class EmuBuildJobManager {
       });
 
       job.metadata = metadata;
-      job.metadataPath = path.relative(process.cwd(), path.join(emuFolder, 'metadata.json'));
-      job.outputDir = path.relative(process.cwd(), emuFolder);
+      job.artifacts.outputDir = path.relative(process.cwd(), emuFolder);
 
-      const archivePath = await this.packageArchive(emuFolder, emuFolderName, request.signArtifacts);
-      job.archivePath = path.relative(process.cwd(), archivePath);
+      this.startStep(job, 'package', 'Packaging EMU artifacts');
+      const archivePath = await this.packageArchive(buildRoot, emuFolder, emuFolderName, request.signArtifacts);
+      job.artifacts.archivePath = path.relative(process.cwd(), archivePath);
+
+      const exposedMetadataPath = path.join(config.buildOutputPath, `${job.id}-metadata.json`);
+      await fs.promises.cp(path.join(emuFolder, 'metadata.json'), exposedMetadataPath, { force: true });
+      job.artifacts.metadataPath = path.relative(process.cwd(), exposedMetadataPath);
 
       job.status = 'completed';
-      this.touch(job, { step: 'complete', message: `EMU packaged at ${archivePath}` });
+      job.finishedAt = new Date().toISOString();
+      this.finishStep(job, 'package', `EMU packaged at ${archivePath}`);
     } catch (error) {
       job.status = 'failed';
       job.error = error instanceof Error ? error.message : 'Unknown build error';
-      this.touch(job, { step: 'error', message: job.error });
+      this.failStep(job, 'package', job.error);
+    } finally {
+      await this.cleanupWorkspace(buildRoot, job.status === 'completed');
+      this.finishStep(job, 'cleanup', 'Workspace cleaned up');
     }
   }
 
@@ -206,12 +245,17 @@ export class EmuBuildJobManager {
     return metadata;
   }
 
-  private async packageArchive(emuFolder: string, emuFolderName: string, signArtifacts?: boolean): Promise<string> {
+  private async packageArchive(
+    buildRoot: string,
+    emuFolder: string,
+    emuFolderName: string,
+    signArtifacts?: boolean
+  ): Promise<string> {
     const zip = new AdmZip();
     zip.addLocalFolder(emuFolder, emuFolderName);
 
     await fs.promises.mkdir(config.buildOutputPath, { recursive: true });
-    const archivePath = path.join(config.buildOutputPath, `${emuFolderName}.zip`);
+    const archivePath = path.join(config.buildOutputPath, `${path.basename(buildRoot)}-${emuFolderName}.zip`);
     zip.writeZip(archivePath);
 
     if (signArtifacts && config.pgpSignCommand) {
@@ -242,7 +286,9 @@ export class EmuBuildJobManager {
     if (log) {
       job.logs = [...job.logs, { ...log, timestamp: new Date().toISOString() }];
     }
-    this.jobs.set(job.id, { ...job });
+    const snapshot = { ...job };
+    this.jobs.set(job.id, snapshot);
+    this.notify(snapshot);
   }
 
   private async getEmbeddingPipeline() {
@@ -258,6 +304,67 @@ export class EmuBuildJobManager {
   private async loadLance(): Promise<LanceDBModule> {
     const lanceModule = await import('@lancedb/lancedb');
     return lanceModule as LanceDBModule;
+  }
+
+  subscribe(listener: (job: EmuBuildJob) => void) {
+    this.subscribers.add(listener);
+    return () => this.subscribers.delete(listener);
+  }
+
+  private notify(job: EmuBuildJob) {
+    for (const listener of this.subscribers) {
+      listener(job);
+    }
+  }
+
+  private initializeSteps(): EmuBuildJob['steps'] {
+    const now = new Date().toISOString();
+    return [
+      { key: 'init', status: 'pending', startedAt: now },
+      { key: 'embed', status: 'pending' },
+      { key: 'package', status: 'pending' },
+      { key: 'cleanup', status: 'pending' }
+    ];
+  }
+
+  private updateStep(job: EmuBuildJob, key: EmuBuildStepKey, status: EmuBuildStepStatus, message?: string) {
+    const step = job.steps.find((entry) => entry.key === key);
+    if (!step) return;
+
+    const timestamp = new Date().toISOString();
+    step.status = status;
+    if (status === 'running' && !step.startedAt) step.startedAt = timestamp;
+    if (status === 'completed' || status === 'failed') step.finishedAt = timestamp;
+    if (message) step.message = message;
+  }
+
+  private startStep(job: EmuBuildJob, key: EmuBuildStepKey, message?: string) {
+    this.updateStep(job, key, 'running', message);
+    this.touch(job, { step: key, message: message || `${key} started` });
+  }
+
+  private finishStep(job: EmuBuildJob, key: EmuBuildStepKey, message?: string) {
+    this.updateStep(job, key, 'completed', message);
+    this.touch(job, { step: key, message: message || `${key} complete` });
+  }
+
+  private failStep(job: EmuBuildJob, key: EmuBuildStepKey, message: string) {
+    this.updateStep(job, key, 'failed', message);
+    this.touch(job, { step: key, message });
+  }
+
+  private async cleanupWorkspace(buildRoot: string, completed: boolean) {
+    if (!fs.existsSync(buildRoot)) return;
+
+    try {
+      if (completed) {
+        await fs.promises.rm(buildRoot, { recursive: true, force: true });
+      } else {
+        await fs.promises.rm(buildRoot, { recursive: true, force: true });
+      }
+    } catch (error) {
+      console.warn('Failed to clean build workspace', error);
+    }
   }
 }
 

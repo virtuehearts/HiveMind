@@ -68,15 +68,20 @@ const formatBuildJob = (job: EmuBuildJob) => ({
   id: job.id,
   name: job.name,
   status: job.status,
-  manifestPath: job.manifestPath,
+  manifestPath: job.inputs.manifestPath,
   createdAt: job.createdAt,
   updatedAt: job.updatedAt,
-  outputDir: job.outputDir,
-  archivePath: job.archivePath,
-  metadataPath: job.metadataPath,
-  signaturePath: job.signaturePath,
+  startedAt: job.startedAt,
+  finishedAt: job.finishedAt,
+  outputDir: job.artifacts.outputDir,
+  archivePath: job.artifacts.archivePath,
+  metadataPath: job.artifacts.metadataPath,
+  signaturePath: job.artifacts.signaturePath,
   metadata: job.metadata,
   logs: job.logs,
+  steps: job.steps,
+  artifacts: job.artifacts,
+  inputs: job.inputs,
   error: job.error
 });
 
@@ -232,6 +237,34 @@ router.get('/emu/build/:id', (req, res) => {
   }
 
   res.json(formatBuildJob(job));
+});
+
+router.get('/emu/build/:id/stream', (req, res) => {
+  const job = emuBuildJobManager.getJob(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: 'EMU build job not found' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const sendUpdate = (next: EmuBuildJob) => {
+    if (next.id !== job.id) return;
+    const payload = `data: ${JSON.stringify(formatBuildJob(next))}\n\n`;
+    res.write(payload);
+  };
+
+  const unsubscribe = emuBuildJobManager.subscribe(sendUpdate);
+  sendUpdate(job);
+
+  const interval = setInterval(() => res.write(': keep-alive\n\n'), 20000);
+
+  req.on('close', () => {
+    clearInterval(interval);
+    unsubscribe();
+  });
 });
 
 router.get('/emu/build/:id/download', (req, res) => {

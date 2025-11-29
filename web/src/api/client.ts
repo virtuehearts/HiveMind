@@ -136,19 +136,52 @@ export interface EmuBuildMetadata {
   lanceDbPath: string;
 }
 
+export type EmuBuildStepStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export type EmuBuildStepKey = 'init' | 'embed' | 'package' | 'cleanup';
+
+export interface EmuBuildStep {
+  key: EmuBuildStepKey;
+  status: EmuBuildStepStatus;
+  startedAt?: string;
+  finishedAt?: string;
+  message?: string;
+}
+
+export interface EmuBuildInputs {
+  manifestPath: string;
+  name?: string;
+  trainedBy?: string;
+  queryPrompts?: string[];
+  signArtifacts?: boolean;
+}
+
+export interface EmuBuildArtifacts {
+  buildDir: string;
+  outputDir?: string;
+  archivePath?: string;
+  metadataPath?: string;
+  signaturePath?: string;
+  manifestPath: string;
+}
+
 export interface EmuBuildJob {
   id: string;
   name: string;
   status: EmuBuildStatus;
-  manifestPath: string;
   createdAt: string;
   updatedAt: string;
+  startedAt?: string;
+  finishedAt?: string;
   outputDir?: string;
   archivePath?: string;
   metadataPath?: string;
   signaturePath?: string;
   metadata?: EmuBuildMetadata;
   logs: EmuBuildLog[];
+  steps: EmuBuildStep[];
+  artifacts: EmuBuildArtifacts;
+  inputs: EmuBuildInputs;
   error?: string;
 }
 
@@ -368,6 +401,25 @@ export function fetchEmuBuild(id: string): Promise<EmuBuildJob> {
 
 export function listEmuBuilds(): Promise<EmuBuildJob[]> {
   return getJson<EmuBuildJob[]>('/api/emu/build');
+}
+
+export function streamEmuBuild(id: string, onUpdate: (job: EmuBuildJob) => void) {
+  const source = new EventSource(`${getApiBase()}/api/emu/build/${id}/stream`);
+
+  source.onmessage = (event) => {
+    try {
+      const parsed = JSON.parse(event.data) as EmuBuildJob;
+      onUpdate(parsed);
+    } catch (error) {
+      console.warn('Unable to parse EMU build event', error);
+    }
+  };
+
+  source.onerror = () => {
+    source.close();
+  };
+
+  return source;
 }
 
 export async function downloadEmuBuild(id: string) {
