@@ -160,3 +160,42 @@ export interface QueryGenerationJob {
   generatedDir: string;
   items: QueryGenerationResult[];
 }
+
+export type EmuBuildStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface EmuBuildLog {
+  step: string;
+  message: string;
+  timestamp: string;
+}
+
+export interface EmuBuildMetadata {
+  id: string;
+  name: string;
+  trained_by: string;
+  trained_at: string;
+  approx_tokens: number;
+  source_urls: string[];
+  query_prompts: string[];
+  embedding_model: string;
+  chunk_count: number;
+  dataset_size_bytes: number;
+  notesPath: string;
+  lanceDbPath: string;
+}
+
+export interface EmuBuildJob {
+  id: string;
+  name: string;
+  manifestPath: string;
+  status: EmuBuildStatus;
+  createdAt: string;
+  updatedAt: string;
+  outputDir?: string;
+  archivePath?: string;
+  metadataPath?: string;
+  signaturePath?: string;
+  metadata?: EmuBuildMetadata;
+  logs: EmuBuildLog[];
+  error?: string;
+}

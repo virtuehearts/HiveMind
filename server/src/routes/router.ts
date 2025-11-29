@@ -11,13 +11,15 @@ import { TOKEN_CHAR_RATIO, chunkText } from '../services/textChunker';
 import { OllamaClient } from '../services/ollamaClient';
 import { openRouterJobManager } from '../services/openRouterJob';
 import { scrapeJobManager } from '../services/scrapeJob';
+import { emuBuildJobManager } from '../services/emuBuildJob';
 import {
   MemoryBlockUpdatePayload,
   NewMemoryBlockPayload,
   RouterRequestBody,
   ScrapeJob,
   QueryGenerationJob,
-  UploadChunkArtifacts
+  UploadChunkArtifacts,
+  EmuBuildJob
 } from '../types';
 import pdfParse from 'pdf-parse';
 
@@ -60,6 +62,22 @@ const formatGenerationJob = (job: QueryGenerationJob) => ({
   failed: job.failed,
   generatedDir: job.generatedDir,
   items: job.items
+});
+
+const formatBuildJob = (job: EmuBuildJob) => ({
+  id: job.id,
+  name: job.name,
+  status: job.status,
+  manifestPath: job.manifestPath,
+  createdAt: job.createdAt,
+  updatedAt: job.updatedAt,
+  outputDir: job.outputDir,
+  archivePath: job.archivePath,
+  metadataPath: job.metadataPath,
+  signaturePath: job.signaturePath,
+  metadata: job.metadata,
+  logs: job.logs,
+  error: job.error
 });
 
 const parseQueries = (body: any, file?: Express.Multer.File): string[] => {
@@ -170,6 +188,68 @@ router.get('/openrouter/jobs/:id', (req, res) => {
   }
 
   res.json(formatGenerationJob(job));
+});
+
+router.post('/emu/build', async (req, res) => {
+  const body = req.body as {
+    manifestPath?: string;
+    name?: string;
+    trainedBy?: string;
+    queryPrompts?: string[];
+    signArtifacts?: boolean;
+  };
+
+  if (!body?.manifestPath) {
+    return res.status(400).json({ error: 'manifestPath is required to build an EMU' });
+  }
+
+  try {
+    const job = await emuBuildJobManager.createJob({
+      manifestPath: body.manifestPath,
+      name: typeof body.name === 'string' ? body.name : undefined,
+      trainedBy: typeof body.trainedBy === 'string' ? body.trainedBy : undefined,
+      queryPrompts: Array.isArray(body.queryPrompts)
+        ? body.queryPrompts.map((entry) => (typeof entry === 'string' ? entry : '')).filter(Boolean)
+        : undefined,
+      signArtifacts: Boolean(body.signArtifacts)
+    });
+    res.json(formatBuildJob(job));
+  } catch (error) {
+    console.error('Failed to start EMU build', error);
+    const message = error instanceof Error ? error.message : 'Unable to start EMU build';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.get('/emu/build', (_req, res) => {
+  res.json(emuBuildJobManager.listJobs().map(formatBuildJob));
+});
+
+router.get('/emu/build/:id', (req, res) => {
+  const job = emuBuildJobManager.getJob(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: 'EMU build job not found' });
+  }
+
+  res.json(formatBuildJob(job));
+});
+
+router.get('/emu/build/:id/download', (req, res) => {
+  const archivePath = emuBuildJobManager.getArchivePath(req.params.id);
+  if (!archivePath) {
+    return res.status(404).json({ error: 'Archive not available yet' });
+  }
+
+  res.sendFile(archivePath, { headers: { 'Content-Type': 'application/zip' } });
+});
+
+router.get('/emu/build/:id/metadata', (req, res) => {
+  const metadataPath = emuBuildJobManager.getMetadataPath(req.params.id);
+  if (!metadataPath) {
+    return res.status(404).json({ error: 'Metadata not available yet' });
+  }
+
+  res.sendFile(metadataPath, { headers: { 'Content-Type': 'application/json' } });
 });
 
 router.post('/ingest/upload', upload.single('file'), async (req, res) => {
