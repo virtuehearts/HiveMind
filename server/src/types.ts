@@ -184,17 +184,46 @@ export interface EmuBuildMetadata {
   lanceDbPath: string;
 }
 
-export interface EmuBuildJob {
-  id: string;
-  name: string;
+export type EmuBuildStepStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export type EmuBuildStepKey = 'init' | 'embed' | 'package' | 'cleanup';
+
+export interface EmuBuildStep {
+  key: EmuBuildStepKey;
+  status: EmuBuildStepStatus;
+  startedAt?: string;
+  finishedAt?: string;
+  message?: string;
+}
+
+export interface EmuBuildInputs {
   manifestPath: string;
-  status: EmuBuildStatus;
-  createdAt: string;
-  updatedAt: string;
+  name?: string;
+  trainedBy?: string;
+  queryPrompts?: string[];
+  signArtifacts?: boolean;
+}
+
+export interface EmuBuildArtifacts {
+  buildDir: string;
   outputDir?: string;
   archivePath?: string;
   metadataPath?: string;
   signaturePath?: string;
+  manifestPath: string;
+}
+
+export interface EmuBuildJob {
+  id: string;
+  name: string;
+  status: EmuBuildStatus;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  inputs: EmuBuildInputs;
+  steps: EmuBuildStep[];
+  artifacts: EmuBuildArtifacts;
   metadata?: EmuBuildMetadata;
   logs: EmuBuildLog[];
   error?: string;

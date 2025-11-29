@@ -6,7 +6,8 @@ import {
   EmuBuildJob,
   fetchEmuBuild,
   downloadEmuBuild,
-  EmuBuildMetadata
+  EmuBuildMetadata,
+  streamEmuBuild
 } from '../api/client';
 
 const promptPresets = [
@@ -87,6 +88,28 @@ const TrainingPage = () => {
 
     if (mapped.length) {
       setLogs(mapped);
+    }
+  };
+
+  const applyJobUpdate = (latest: EmuBuildJob) => {
+    setBuildJob(latest);
+    syncJobLogs(latest);
+
+    if (latest.metadata) {
+      setBuildMetadata(latest.metadata);
+    }
+
+    if (latest.status === 'completed') {
+      const updatedAt = latest.metadata?.trained_at ? Date.parse(latest.metadata.trained_at) : Date.parse(latest.updatedAt);
+      setArtifacts({
+        emuPath: latest.archivePath || '',
+        metadataPath: latest.metadataPath || '',
+        updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now()
+      });
+      setStepStatus((prev) => ({ ...prev, enrich: 'Complete', build: 'Complete', export: 'Generated' }));
+    } else if (latest.status === 'failed') {
+      setStepStatus((prev) => ({ ...prev, build: 'Failed' }));
+      setBuildError(latest.error || 'Build failed');
     }
   };
 
@@ -221,35 +244,21 @@ const TrainingPage = () => {
     if (!buildJob?.id) return;
     if (buildJob.status === 'completed' || buildJob.status === 'failed') return;
 
+    const source = streamEmuBuild(buildJob.id, applyJobUpdate);
+
     const timer = setInterval(async () => {
       try {
         const latest = await fetchEmuBuild(buildJob.id);
-        setBuildJob(latest);
-        syncJobLogs(latest);
-        if (latest.metadata) {
-          setBuildMetadata(latest.metadata);
-        }
-
-        if (latest.status === 'completed') {
-          const updatedAt = latest.metadata?.trained_at
-            ? Date.parse(latest.metadata.trained_at)
-            : Date.parse(latest.updatedAt);
-          setArtifacts({
-            emuPath: latest.archivePath || '',
-            metadataPath: latest.metadataPath || '',
-            updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now()
-          });
-          setStepStatus((prev) => ({ ...prev, enrich: 'Complete', build: 'Complete', export: 'Generated' }));
-        } else if (latest.status === 'failed') {
-          setStepStatus((prev) => ({ ...prev, build: 'Failed' }));
-          setBuildError(latest.error || 'Build failed');
-        }
+        applyJobUpdate(latest);
       } catch (error) {
         setBuildError('Unable to refresh build status.');
       }
     }, 1200);
 
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      source.close();
+    };
   }, [buildJob]);
 
   useEffect(() => {
