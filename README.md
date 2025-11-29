@@ -42,6 +42,10 @@ HiveMind is a **local-first, edge-augmented RAG protocol** that treats memory as
 7. **Verify connectivity**
    - Open the web UI and confirm the readiness cards for backend URL, router model, and EMU mounts show green.
 
+## 🔑 Configuration prerequisites
+- **OpenRouter** – set `OPENROUTER_API_KEY` in your environment (or `.env`) before running enrichment jobs so the backend can stream responses. You can override the default model with `OPENROUTER_MODEL`.
+- **Local embeddings** – the EMU builder uses `Xenova/all-MiniLM-L6-v2`. The first run downloads the model to your transformers cache; ensure the machine can reach the model hub or pre-seed the cache (e.g., via `TRANSFORMERS_CACHE`).
+
 ## 🐚 One-Command Operations with the `HiveMind` Script
 Use the bundled `HiveMind` shell script in the repo root to manage the full stack (Ollama, backend, and web UI). It stores PID files and logs under `.hivemind/` so you can start/stop services cleanly.
 
