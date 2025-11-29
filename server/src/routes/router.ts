@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import type { Express } from 'express';
 import { Router } from 'express';
 import multer from 'multer';
 import { gzipSync } from 'zlib';
@@ -8,12 +9,14 @@ import { config } from '../config';
 import { EmuMemoryLayer } from '../services/emuMemoryLayer';
 import { TOKEN_CHAR_RATIO, chunkText } from '../services/textChunker';
 import { OllamaClient } from '../services/ollamaClient';
+import { openRouterJobManager } from '../services/openRouterJob';
 import { scrapeJobManager } from '../services/scrapeJob';
 import {
   MemoryBlockUpdatePayload,
   NewMemoryBlockPayload,
   RouterRequestBody,
   ScrapeJob,
+  QueryGenerationJob,
   UploadChunkArtifacts
 } from '../types';
 import pdfParse from 'pdf-parse';
@@ -44,6 +47,51 @@ const formatScrapeJob = (job: ScrapeJob) => ({
     chunks: job.artifacts.chunks
   }
 });
+
+const formatGenerationJob = (job: QueryGenerationJob) => ({
+  id: job.id,
+  model: job.model,
+  prompt: job.prompt,
+  status: job.status,
+  createdAt: job.createdAt,
+  updatedAt: job.updatedAt,
+  total: job.total,
+  completed: job.completed,
+  failed: job.failed,
+  generatedDir: job.generatedDir,
+  items: job.items
+});
+
+const parseQueries = (body: any, file?: Express.Multer.File): string[] => {
+  const lines: string[] = [];
+
+  if (Array.isArray(body?.queries)) {
+    lines.push(...body.queries.map((entry: any) => (typeof entry === 'string' ? entry : '')).filter(Boolean));
+  } else if (typeof body?.queries === 'string') {
+    try {
+      const parsed = JSON.parse(body.queries);
+      if (Array.isArray(parsed)) {
+        lines.push(...parsed.map((entry) => (typeof entry === 'string' ? entry : '')).filter(Boolean));
+      }
+    } catch (error) {
+      lines.push(...body.queries.split(/\r?\n/));
+    }
+  }
+
+  if (typeof body?.queriesText === 'string') {
+    lines.push(...body.queriesText.split(/\r?\n/));
+  }
+
+  if (file) {
+    const text = file.buffer.toString('utf-8');
+    lines.push(...text.split(/\r?\n/));
+  }
+
+  return lines
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((value, index, self) => self.indexOf(value) === index);
+};
 
 router.get('/model', async (_req, res) => {
   const available = await ollama.checkModelAvailability(config.routerModel);
@@ -85,6 +133,43 @@ router.get('/scrape/:jobId', (req, res) => {
   }
 
   res.json(formatScrapeJob(job));
+});
+
+router.post('/openrouter/jobs', upload.single('queriesFile'), (req, res) => {
+  const apiKey = (req.body?.apiKey as string | undefined)?.trim() || config.openRouterApiKey;
+  if (!apiKey) {
+    return res.status(400).json({ error: 'OpenRouter API key is required' });
+  }
+
+  const queries = parseQueries(req.body, req.file);
+  if (!queries.length) {
+    return res.status(400).json({ error: 'At least one query is required' });
+  }
+
+  const model = (req.body?.model as string | undefined)?.trim() || config.openRouterModel;
+  const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt : undefined;
+
+  try {
+    const job = openRouterJobManager.createJob(queries, model, apiKey, prompt);
+    res.json(formatGenerationJob(job));
+  } catch (error) {
+    console.error('Failed to start OpenRouter job', error);
+    res.status(500).json({ error: 'Unable to start OpenRouter generation' });
+  }
+});
+
+router.get('/openrouter/jobs', (_req, res) => {
+  const jobs = openRouterJobManager.listJobs().map(formatGenerationJob);
+  res.json(jobs);
+});
+
+router.get('/openrouter/jobs/:id', (req, res) => {
+  const job = openRouterJobManager.getJob(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+
+  res.json(formatGenerationJob(job));
 });
 
 router.post('/ingest/upload', upload.single('file'), async (req, res) => {

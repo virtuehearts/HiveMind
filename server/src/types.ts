@@ -133,3 +133,30 @@ export interface ScrapeJob {
   error?: string;
   warnings?: string[];
 }
+
+export type QueryGenerationStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface QueryGenerationResult {
+  id: string;
+  query: string;
+  status: 'pending' | 'running' | 'succeeded' | 'failed';
+  response?: string;
+  filePath?: string;
+  error?: string;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+export interface QueryGenerationJob {
+  id: string;
+  model: string;
+  prompt: string;
+  status: QueryGenerationStatus;
+  createdAt: string;
+  updatedAt: string;
+  total: number;
+  completed: number;
+  failed: number;
+  generatedDir: string;
+  items: QueryGenerationResult[];
+}
