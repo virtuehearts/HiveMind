@@ -681,6 +681,7 @@ a {
 }
 
 .detail-grid input,
+.detail-grid select,
 .detail-grid textarea,
 .manager-sidebar input,
 .import-grid input {
@@ -777,6 +778,26 @@ a {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px;
+}
+
+.step-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.step-list li {
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 @media (max-width: 720px) {

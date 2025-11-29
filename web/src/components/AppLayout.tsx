@@ -16,6 +16,7 @@ const AppLayout = () => {
             Chat
           </NavLink>
           <NavLink to="/memory">Memories</NavLink>
+          <NavLink to="/training">Training</NavLink>
         </nav>
       </header>
       <main>
