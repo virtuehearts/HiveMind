@@ -4,7 +4,13 @@ import { gzipSync } from 'zlib';
 import { config } from '../config';
 import { EmuMemoryLayer } from '../services/emuMemoryLayer';
 import { OllamaClient } from '../services/ollamaClient';
-import { MemoryBlockUpdatePayload, NewMemoryBlockPayload, RouterRequestBody } from '../types';
+import { scrapeJobManager } from '../services/scrapeJob';
+import {
+  MemoryBlockUpdatePayload,
+  NewMemoryBlockPayload,
+  RouterRequestBody,
+  ScrapeJob
+} from '../types';
 import pdfParse from 'pdf-parse';
 
 const router = Router();
@@ -15,6 +21,23 @@ const memoryLayer = new EmuMemoryLayer({
 });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 const emuUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
+
+const formatScrapeJob = (job: ScrapeJob) => ({
+  id: job.id,
+  name: job.name,
+  status: job.status,
+  urls: job.urls,
+  createdAt: job.createdAt,
+  updatedAt: job.updatedAt,
+  warnings: job.warnings,
+  error: job.error,
+  artifacts: job.artifacts && {
+    buildDir: job.artifacts.buildDir,
+    rawDir: job.artifacts.rawDir,
+    manifestPath: job.artifacts.manifestPath,
+    chunks: job.artifacts.chunks
+  }
+});
 
 router.get('/model', async (_req, res) => {
   const available = await ollama.checkModelAvailability(config.routerModel);
@@ -31,6 +54,31 @@ router.get('/memory/blocks', (_req, res) => {
 
 router.get('/emus', (_req, res) => {
   res.json(memoryLayer.listEmuMounts());
+});
+
+router.post('/scrape', (req, res) => {
+  const body = req.body as { urls?: unknown; name?: unknown };
+  const urls = Array.isArray(body.urls)
+    ? body.urls
+        .map((url) => (typeof url === 'string' ? url.trim() : ''))
+        .filter((url) => /^https?:\/\//.test(url))
+    : [];
+
+  if (!urls.length) {
+    return res.status(400).json({ error: 'At least one valid URL is required' });
+  }
+
+  const job = scrapeJobManager.createJob(urls, typeof body.name === 'string' ? body.name : undefined);
+  res.json(formatScrapeJob(job));
+});
+
+router.get('/scrape/:jobId', (req, res) => {
+  const job = scrapeJobManager.getJob(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({ error: 'Scrape job not found' });
+  }
+
+  res.json(formatScrapeJob(job));
 });
 
 router.get('/memory/blocks/:id', (req, res) => {
