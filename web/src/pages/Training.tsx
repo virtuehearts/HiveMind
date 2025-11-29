@@ -1,5 +1,13 @@
-import { FormEvent, useMemo, useState } from 'react';
-import { chunkUpload, UploadChunkArtifacts } from '../api/client';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import {
+  chunkUpload,
+  UploadChunkArtifacts,
+  startEmuBuild,
+  EmuBuildJob,
+  fetchEmuBuild,
+  downloadEmuBuild,
+  EmuBuildMetadata
+} from '../api/client';
 
 const promptPresets = [
   { value: 'summaries', label: 'Summaries + key facts', description: 'Generate tight summaries and pull out high-signal facts.' },
@@ -38,6 +46,9 @@ const TrainingPage = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [chunkResult, setChunkResult] = useState<UploadChunkArtifacts | null>(null);
+  const [buildJob, setBuildJob] = useState<EmuBuildJob | null>(null);
+  const [buildError, setBuildError] = useState('');
+  const [buildMetadata, setBuildMetadata] = useState<EmuBuildMetadata | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [stepStatus, setStepStatus] = useState<Record<StepKey, string>>({
     ingest: 'Pending',
@@ -50,6 +61,7 @@ const TrainingPage = () => {
     metadataPath: '',
     updatedAt: 0
   });
+  const [signArtifacts, setSignArtifacts] = useState(false);
 
   const addLog = (step: StepKey, message: string) => {
     setLogs((prev) => [
@@ -61,6 +73,21 @@ const TrainingPage = () => {
       },
       ...prev
     ]);
+  };
+
+  const syncJobLogs = (job: EmuBuildJob) => {
+    const mapped = job.logs
+      .map<LogEntry>((entry) => ({
+        id: `${job.id}-${entry.timestamp}`,
+        step: ['ingest', 'enrich', 'build', 'export'].includes(entry.step) ? (entry.step as StepKey) : 'build',
+        message: entry.message,
+        timestamp: new Date(entry.timestamp).getTime()
+      }))
+      .sort((a, b) => b.timestamp - a.timestamp);
+
+    if (mapped.length) {
+      setLogs(mapped);
+    }
   };
 
   const handleUpload = async (event: FormEvent) => {
@@ -95,6 +122,9 @@ const TrainingPage = () => {
     try {
       const result = await chunkUpload(formData);
       setChunkResult(result);
+      setBuildJob(null);
+      setBuildMetadata(null);
+      setArtifacts({ emuPath: '', metadataPath: '', updatedAt: 0 });
       setStepStatus((prev) => ({ ...prev, ingest: 'Complete', enrich: 'Ready' }));
       addLog('enrich', `Chunks ready (${result.chunks.length} sections, ${result.mimeType}).`);
     } catch (error) {
@@ -122,25 +152,56 @@ const TrainingPage = () => {
     }, 150);
   };
 
-  const handleBuild = (event: FormEvent) => {
+  const handleBuild = async (event: FormEvent) => {
     event.preventDefault();
-    setStepStatus((prev) => ({ ...prev, enrich: 'Running', build: 'Packaging' }));
-    addLog('enrich', `Applying prompt “${promptPresets.find((p) => p.value === promptChoice)?.label || 'Custom'}” using ${modelChoice}.`);
+    setBuildError('');
 
-    const buildLabel = ingestTitle || (uploadFile?.name ?? 'dataset');
-    const emuName = `${buildLabel.replace(/[^a-zA-Z0-9-_]+/g, '_').toLowerCase() || 'dataset'}-${buildTag}.emu`;
-    const metadataName = `${buildTag}-metadata.json`;
+    if (!chunkResult) {
+      setBuildError('Ingest a dataset before running the builder.');
+      return;
+    }
 
-    setTimeout(() => {
-      setStepStatus((prev) => ({ ...prev, enrich: 'Complete', build: 'Complete', export: 'Generated' }));
-      setArtifacts({
-        emuPath: `/artifacts/${emuName}`,
-        metadataPath: `/artifacts/${metadataName}`,
-        updatedAt: Date.now()
+    try {
+      setStepStatus((prev) => ({ ...prev, enrich: 'Running', build: 'Packaging' }));
+      addLog(
+        'enrich',
+        `Applying prompt “${promptPresets.find((p) => p.value === promptChoice)?.label || 'Custom'}” using ${modelChoice}.`
+      );
+
+      const job = await startEmuBuild({
+        manifestPath: chunkResult.manifestPath,
+        name: `${(ingestTitle || uploadFile?.name || 'dataset').replace(/[^a-zA-Z0-9-_]+/g, '-')}-${buildTag}`,
+        trainedBy: 'local-router',
+        queryPrompts: customPrompt.trim() ? [customPrompt.trim()] : [],
+        signArtifacts
       });
-      addLog('build', `Packaged EMU with chunk size ${chunkSize} and ${overlap}px overlap.`);
-      addLog('export', `Artifacts saved: ${emuName} and ${metadataName}.`);
-    }, 180);
+
+      setBuildJob(job);
+      setBuildMetadata(job.metadata || null);
+      syncJobLogs(job);
+      setStepStatus((prev) => ({ ...prev, build: 'Running', export: 'Waiting' }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to start EMU build';
+      setBuildError(message);
+      setStepStatus((prev) => ({ ...prev, build: 'Failed' }));
+      addLog('build', `Build failed: ${message}`);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!buildJob) return;
+    try {
+      const blob = await downloadEmuBuild(buildJob.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${buildJob.name || 'emu-build'}.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to download archive';
+      setBuildError(message);
+    }
   };
 
   const stepList: { key: StepKey; label: string; hint: string }[] = [
@@ -151,9 +212,54 @@ const TrainingPage = () => {
   ];
 
   const formattedUpdated = useMemo(() => {
+    if (buildMetadata?.trained_at) return new Date(buildMetadata.trained_at).toLocaleString();
     if (!artifacts.updatedAt) return '—';
     return new Date(artifacts.updatedAt).toLocaleString();
-  }, [artifacts.updatedAt]);
+  }, [artifacts.updatedAt, buildMetadata?.trained_at]);
+
+  useEffect(() => {
+    if (!buildJob?.id) return;
+    if (buildJob.status === 'completed' || buildJob.status === 'failed') return;
+
+    const timer = setInterval(async () => {
+      try {
+        const latest = await fetchEmuBuild(buildJob.id);
+        setBuildJob(latest);
+        syncJobLogs(latest);
+        if (latest.metadata) {
+          setBuildMetadata(latest.metadata);
+        }
+
+        if (latest.status === 'completed') {
+          const updatedAt = latest.metadata?.trained_at
+            ? Date.parse(latest.metadata.trained_at)
+            : Date.parse(latest.updatedAt);
+          setArtifacts({
+            emuPath: latest.archivePath || '',
+            metadataPath: latest.metadataPath || '',
+            updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now()
+          });
+          setStepStatus((prev) => ({ ...prev, enrich: 'Complete', build: 'Complete', export: 'Generated' }));
+        } else if (latest.status === 'failed') {
+          setStepStatus((prev) => ({ ...prev, build: 'Failed' }));
+          setBuildError(latest.error || 'Build failed');
+        }
+      } catch (error) {
+        setBuildError('Unable to refresh build status.');
+      }
+    }, 1200);
+
+    return () => clearInterval(timer);
+  }, [buildJob]);
+
+  useEffect(() => {
+    if (buildJob?.metadata) {
+      setBuildMetadata(buildJob.metadata);
+    }
+    if (buildJob) {
+      syncJobLogs(buildJob);
+    }
+  }, [buildJob]);
 
   return (
     <div className="panel">
@@ -196,6 +302,10 @@ const TrainingPage = () => {
             <li>
               <span>Updated</span>
               <strong>{formattedUpdated}</strong>
+            </li>
+            <li>
+              <span>Approx tokens</span>
+              <strong>{buildMetadata?.approx_tokens?.toLocaleString() || '—'}</strong>
             </li>
           </ul>
         </div>
@@ -430,11 +540,22 @@ const TrainingPage = () => {
           <span className="badge ghost">Step 4</span>
         </div>
         <form className="action-row" onSubmit={handleBuild}>
-          <button type="submit">Build EMU + metadata</button>
+          <button type="submit" disabled={!chunkResult}>
+            {buildJob && buildJob.status === 'running' ? 'Building…' : 'Build EMU + metadata'}
+          </button>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={signArtifacts}
+              onChange={(event) => setSignArtifacts(event.target.checked)}
+            />
+            Request PGP signature (optional)
+          </label>
           <button type="button" className="ghost" onClick={() => setLogs([])}>
             Clear logs
           </button>
           <p className="muted small">Tracks enrichment, embedding, and artifact export.</p>
+          {buildError && <p className="muted" style={{ color: '#f97316' }}>{buildError}</p>}
         </form>
       </div>
 
@@ -506,8 +627,13 @@ const TrainingPage = () => {
                 <p className="muted small">Packaged embeddings + source context.</p>
               </div>
               <div className="emu-actions">
-                <button className="ghost" type="button" disabled={!artifacts.emuPath}>
-                  {artifacts.emuPath ? 'Download' : 'Pending'}
+                <button
+                  className="ghost"
+                  type="button"
+                  onClick={handleDownload}
+                  disabled={!buildJob || buildJob.status !== 'completed'}
+                >
+                  {buildJob && buildJob.status === 'completed' ? 'Download' : 'Pending'}
                 </button>
               </div>
             </li>
@@ -517,9 +643,7 @@ const TrainingPage = () => {
                 <p className="muted small">Chunk stats, model info, and provenance.</p>
               </div>
               <div className="emu-actions">
-                <button className="ghost" type="button" disabled={!artifacts.metadataPath}>
-                  {artifacts.metadataPath ? 'Download' : 'Pending'}
-                </button>
+                <span className="badge ghost">{artifacts.metadataPath || 'Pending'}</span>
               </div>
             </li>
             <li>
@@ -534,6 +658,15 @@ const TrainingPage = () => {
               </div>
             </li>
           </ul>
+          {buildMetadata && (
+            <div className="raw-view" style={{ marginTop: 12 }}>
+              <div className="raw-header">
+                <strong>Build metadata</strong>
+                <span className="badge ghost">{buildMetadata.embedding_model}</span>
+              </div>
+              <pre>{JSON.stringify(buildMetadata, null, 2)}</pre>
+            </div>
+          )}
         </div>
       </div>
     </div>

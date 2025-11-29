@@ -113,6 +113,45 @@ export interface QueryGenerationJob {
   items: QueryGenerationResult[];
 }
 
+export type EmuBuildStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface EmuBuildLog {
+  step: string;
+  message: string;
+  timestamp: string;
+}
+
+export interface EmuBuildMetadata {
+  id: string;
+  name: string;
+  trained_by: string;
+  trained_at: string;
+  approx_tokens: number;
+  source_urls: string[];
+  query_prompts: string[];
+  embedding_model: string;
+  chunk_count: number;
+  dataset_size_bytes: number;
+  notesPath: string;
+  lanceDbPath: string;
+}
+
+export interface EmuBuildJob {
+  id: string;
+  name: string;
+  status: EmuBuildStatus;
+  manifestPath: string;
+  createdAt: string;
+  updatedAt: string;
+  outputDir?: string;
+  archivePath?: string;
+  metadataPath?: string;
+  signaturePath?: string;
+  metadata?: EmuBuildMetadata;
+  logs: EmuBuildLog[];
+  error?: string;
+}
+
 export function resolveDefaultApiBase() {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
 
@@ -311,4 +350,35 @@ export async function listGenerationJobs(): Promise<QueryGenerationJob[]> {
 
 export async function fetchGenerationJob(id: string): Promise<QueryGenerationJob> {
   return getJson<QueryGenerationJob>(`/api/openrouter/jobs/${id}`);
+}
+
+export function startEmuBuild(payload: {
+  manifestPath: string;
+  name?: string;
+  trainedBy?: string;
+  queryPrompts?: string[];
+  signArtifacts?: boolean;
+}): Promise<EmuBuildJob> {
+  return postJson<EmuBuildJob>('/api/emu/build', payload);
+}
+
+export function fetchEmuBuild(id: string): Promise<EmuBuildJob> {
+  return getJson<EmuBuildJob>(`/api/emu/build/${id}`);
+}
+
+export function listEmuBuilds(): Promise<EmuBuildJob[]> {
+  return getJson<EmuBuildJob[]>('/api/emu/build');
+}
+
+export async function downloadEmuBuild(id: string) {
+  const response = await fetch(`${getApiBase()}/api/emu/build/${id}/download`);
+  if (!response.ok) {
+    throw new Error('Unable to download EMU build');
+  }
+
+  return response.blob();
+}
+
+export function fetchEmuBuildMetadata(id: string): Promise<EmuBuildMetadata> {
+  return getJson<EmuBuildMetadata>(`/api/emu/build/${id}/metadata`);
 }

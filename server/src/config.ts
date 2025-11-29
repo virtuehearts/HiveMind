@@ -28,5 +28,8 @@ export const config = {
     process.env.EMU_MEMORY_STORE_PATH || path.resolve(process.cwd(), '.hivemind', 'emu-memory.json'),
   // Approximate 64k token history window (assuming ~4 characters per token)
   maxContextCharacters: Number(process.env.MAX_CONTEXT_CHARACTERS) || 256000,
-  generatedDir: process.env.GENERATED_PATH || path.resolve(process.cwd(), 'generated')
+  generatedDir: process.env.GENERATED_PATH || path.resolve(process.cwd(), 'generated'),
+  trainedBy: process.env.TRAINED_BY || process.env.USER || 'local-router',
+  buildOutputPath: process.env.EMU_BUILD_PATH || path.resolve(process.cwd(), '.hivemind', 'builds'),
+  pgpSignCommand: process.env.PGP_SIGN_COMMAND || ''
 };
