@@ -120,12 +120,22 @@ a {
 }
 
 .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 10px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 999px;
   color: #e2e8f0;
   font-size: 13px;
+  cursor: pointer;
+}
+
+.pill.active-pill {
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.25);
+  background: linear-gradient(120deg, rgba(251, 191, 36, 0.16), rgba(79, 70, 229, 0.12));
 }
 
 .hero-summary {
@@ -417,6 +427,21 @@ a {
   border-radius: 12px;
   padding: 8px 12px;
   cursor: pointer;
+}
+
+.primary {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(120deg, #fbbf24, #f59e0b);
+  color: #0b1221;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .emu-actions {
