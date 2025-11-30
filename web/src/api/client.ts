@@ -15,6 +15,13 @@ export interface ChatCompletion {
   contextUsed?: ConversationTurn[];
 }
 
+export interface RemoteConnectionStatus {
+  ok: boolean;
+  status: number;
+  message: string;
+  model: string;
+}
+
 export interface ConversationTurn {
   role: 'user' | 'assistant';
   content: string;
@@ -248,6 +255,44 @@ export function fetchRouterDecision(message: string, sessionId: string) {
 
 export function fetchChatCompletion(message: string, sessionId: string, transformedQuery?: string) {
   return postJson<ChatCompletion>('/api/chat', { message, sessionId, transformedQuery });
+}
+
+export function testRemoteConnection(apiKey?: string, model?: string) {
+  return postJson<RemoteConnectionStatus>('/api/openrouter/status', { apiKey, model });
+}
+
+export async function streamRemoteChatCompletion(
+  message: string,
+  sessionId: string,
+  onChunk: (chunk: string) => void,
+  transformedQuery?: string
+) {
+  const response = await fetch(`${getApiBase()}/api/chat/remote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, sessionId, transformedQuery })
+  });
+
+  if (!response.ok || !response.body) {
+    const fallback = await response.text().catch(() => '');
+    throw new Error(fallback || 'Failed to stream from OpenRouter');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    if (chunk) {
+      fullText += chunk;
+      onChunk(chunk);
+    }
+  }
+
+  return fullText;
 }
 
 export function fetchMemoryStatus() {

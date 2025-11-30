@@ -10,6 +10,11 @@ import { EmuMemoryLayer } from '../services/emuMemoryLayer';
 import { TOKEN_CHAR_RATIO, chunkText } from '../services/textChunker';
 import { OllamaClient } from '../services/ollamaClient';
 import { openRouterJobManager } from '../services/openRouterJob';
+import {
+  checkOpenRouterConnection,
+  streamOpenRouterChat,
+  toOpenRouterMessages
+} from '../services/openRouterClient';
 import { scrapeJobManager } from '../services/scrapeJob';
 import { emuBuildJobManager } from '../services/emuBuildJob';
 import {
@@ -22,6 +27,7 @@ import {
   EmuBuildJob
 } from '../types';
 import pdfParse from 'pdf-parse';
+import { chatSystemPrompt } from '../services/prompts';
 
 const router = Router();
 const ollama = new OllamaClient();
@@ -193,6 +199,24 @@ router.get('/openrouter/jobs/:id', (req, res) => {
   }
 
   res.json(formatGenerationJob(job));
+});
+
+router.post('/openrouter/status', async (req, res) => {
+  const apiKey = (req.body?.apiKey as string | undefined)?.trim() || config.openRouterApiKey;
+  const model = (req.body?.model as string | undefined)?.trim() || config.openRouterModel;
+
+  try {
+    const status = await checkOpenRouterConnection({ apiKey, model });
+    res.json(status);
+  } catch (error) {
+    console.error('Failed to check OpenRouter connectivity', error);
+    res.status(500).json({
+      ok: false,
+      status: 500,
+      message: 'Unable to check OpenRouter connectivity',
+      model
+    });
+  }
 });
 
 router.post('/emu/build', async (req, res) => {
@@ -559,6 +583,66 @@ router.post('/chat', async (req, res) => {
   } catch (error) {
     console.error('Chat error', error);
     res.status(500).json({ error: 'Failed to complete chat' });
+  }
+});
+
+router.post('/chat/remote', async (req, res) => {
+  const body = req.body as RouterRequestBody & {
+    transformedQuery?: string;
+    apiKey?: string;
+    model?: string;
+  };
+
+  if (!body?.message) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+
+  const sessionId = body.sessionId || 'default';
+
+  const searchQuery = body.transformedQuery || body.message;
+  const relevantBlocks = memoryLayer.findRelevantBlocks(searchQuery, {
+    intents: body.intent ? [body.intent] : undefined,
+    tags: body.tags
+  });
+
+  const memoryContext = relevantBlocks
+    .map((block) => {
+      const tags = block.tags.slice(0, 4).join(', ');
+      return `- (${block.intent}) [${tags}] ${block.title}: ${block.summary}`;
+    })
+    .join('\n');
+
+  const systemPrompt =
+    memoryContext.length > 0
+      ? `${chatSystemPrompt}\n\nLocal EMU memory blocks:\n${memoryContext}\nUse them when relevant.`
+      : chatSystemPrompt;
+
+  const history = ollama.getHistory(sessionId);
+  const messages = toOpenRouterMessages(systemPrompt, history, searchQuery);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  try {
+    let accumulated = '';
+    await streamOpenRouterChat(messages, (token) => {
+      accumulated += token;
+      res.write(token);
+    },
+    { model: body.model, apiKey: body.apiKey });
+
+    ollama.appendToHistory(sessionId, [
+      { role: 'user', content: searchQuery },
+      { role: 'assistant', content: accumulated }
+    ]);
+
+    res.end();
+  } catch (error) {
+    console.error('OpenRouter streaming error', error);
+    res.write(`\n[error] ${error instanceof Error ? error.message : 'Unknown error'}`);
+    res.end();
   }
 });
 
