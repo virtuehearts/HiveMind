@@ -12,7 +12,9 @@ import {
   fetchModelStatus,
   fetchRouterDecision,
   createMemoryBlock,
-  resolveDefaultApiBase
+  resolveDefaultApiBase,
+  streamRemoteChatCompletion,
+  testRemoteConnection
 } from '../api/client';
 
 const makeSessionId = () => Math.random().toString(36).slice(2, 10);
@@ -37,6 +39,9 @@ const ChatPage = () => {
   const [memoryDraft, setMemoryDraft] = useState('');
   const [memoryTitle, setMemoryTitle] = useState('');
   const [memoryBusy, setMemoryBusy] = useState(false);
+  const [remoteStatusOk, setRemoteStatusOk] = useState<boolean | null>(null);
+  const [remoteStatusMessage, setRemoteStatusMessage] = useState('Not tested');
+  const [remoteChecking, setRemoteChecking] = useState(false);
 
   const [sessionId, setSessionId] = useState(() => {
     if (typeof localStorage === 'undefined') return makeSessionId();
@@ -93,6 +98,24 @@ const ChatPage = () => {
     return date.toLocaleString();
   };
 
+  const checkRemoteConnection = async () => {
+    setRemoteChecking(true);
+    setRemoteStatusMessage('Checking remote…');
+
+    try {
+      const status = await testRemoteConnection();
+      setRemoteStatusOk(status.ok);
+      const prefix = status.ok ? 'Connected' : `Error ${status.status || ''}`.trim();
+      setRemoteStatusMessage(`${prefix} (${status.model}): ${status.message}`);
+    } catch (error) {
+      console.error('Remote connectivity check failed', error);
+      setRemoteStatusOk(false);
+      setRemoteStatusMessage('Unable to reach backend for remote test');
+    } finally {
+      setRemoteChecking(false);
+    }
+  };
+
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = input.trim();
@@ -103,10 +126,18 @@ const ChatPage = () => {
     setInput('');
 
     if (modelStatus && !modelStatus.available) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `Router unavailable. Start the backend and pull ${modelStatus.model}.` }
-      ]);
+      setMessages((prev) => {
+        const next = [...prev];
+        const fallback = `Router unavailable. Start the backend and pull ${modelStatus.model}.`;
+
+        if (next[assistantIndex]) {
+          next[assistantIndex] = { ...next[assistantIndex], content: fallback };
+        } else {
+          next.push({ role: 'assistant', content: fallback });
+        }
+
+        return next;
+      });
       return;
     }
 
@@ -134,6 +165,80 @@ const ChatPage = () => {
           content: `Unable to reach the local router at ${apiBase}. Ensure the server is running and Ollama is serving the model.`
         }
       ]);
+    } finally {
+      setStatus('idle');
+    }
+  };
+
+  const sendRemoteMessage = async () => {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    const userMessage: Message = { role: 'user', content: trimmed };
+    let assistantIndex = messages.length + 1;
+
+    setMessages((prev) => {
+      const next = [...prev, userMessage, { role: 'assistant', content: '' }];
+      assistantIndex = next.length - 1;
+      return next;
+    });
+    setInput('');
+
+    if (modelStatus && !modelStatus.available) {
+      setMessages((prev) => {
+        const next = [...prev];
+        const fallback = `Router unavailable. Start the backend and pull ${modelStatus.model}.`;
+
+        if (next[assistantIndex]) {
+          next[assistantIndex] = { ...next[assistantIndex], content: fallback };
+        } else {
+          next.push({ role: 'assistant', content: fallback });
+        }
+
+        return next;
+      });
+      return;
+    }
+
+    try {
+      setStatus('routing');
+      const nextDecision = await fetchRouterDecision(trimmed, sessionId);
+      const enrichedDecision: DecisionSnapshot = { ...nextDecision, timestamp: Date.now() };
+      setDecision(enrichedDecision);
+
+      setStatus('chatting');
+      await streamRemoteChatCompletion(
+        trimmed,
+        sessionId,
+        (chunk) => {
+          setMessages((prev) => {
+            const next = [...prev];
+            if (next[assistantIndex]) {
+              next[assistantIndex] = {
+                ...next[assistantIndex],
+                content: `${next[assistantIndex].content}${chunk}`
+              };
+            }
+            return next;
+          });
+        },
+        nextDecision.transformedQuery || undefined
+      );
+    } catch (err) {
+      console.error('Remote router error', err);
+      setMessages((prev) => {
+        const next = [...prev];
+        const fallback =
+          `Unable to reach the remote router at ${apiBase}. Ensure the server is running and OpenRouter is accessible.`;
+
+        if (next[assistantIndex]) {
+          next[assistantIndex] = { ...next[assistantIndex], content: fallback };
+        } else {
+          next.push({ role: 'assistant', content: fallback });
+        }
+
+        return next;
+      });
     } finally {
       setStatus('idle');
     }
@@ -184,6 +289,14 @@ const ChatPage = () => {
         <div className="status-chip">
           <span className="eyebrow">Backend</span>
           <strong>{apiBase}</strong>
+        </div>
+        <div className="status-chip">
+          <span className="eyebrow">Remote</span>
+          <strong>{remoteStatusMessage}</strong>
+          <button className="ghost" onClick={checkRemoteConnection} disabled={remoteChecking}>
+            {remoteChecking ? 'Testing…' : 'Test remote'}
+          </button>
+          {remoteStatusOk === false && <p className="muted small">Still usable even if the API rejects.</p>}
         </div>
         <div className="status-chip">
           <span className="eyebrow">Session</span>
@@ -359,6 +472,9 @@ const ChatPage = () => {
         />
         <button type="submit" disabled={status !== 'idle'}>
           {status === 'routing' || status === 'chatting' ? 'Working…' : 'Send'}
+        </button>
+        <button type="button" className="ghost" onClick={sendRemoteMessage} disabled={status !== 'idle'}>
+          Send Remote
         </button>
       </form>
     </div>

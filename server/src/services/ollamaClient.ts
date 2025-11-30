@@ -124,6 +124,12 @@ export class OllamaClient {
     };
   }
 
+  appendToHistory(sessionId: string, turns: ConversationTurn[]) {
+    const history = this.histories.get(sessionId) || [];
+    this.histories.set(sessionId, [...history, ...turns]);
+    this.trimHistory(sessionId);
+  }
+
   private trimHistory(sessionId: string) {
     const history = this.histories.get(sessionId);
     if (!history) return;

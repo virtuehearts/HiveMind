@@ -367,6 +367,12 @@ a {
   cursor: pointer;
 }
 
+.chat-input .ghost {
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+  border: 1px solid #1f2937;
+}
+
 .chat-input button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
