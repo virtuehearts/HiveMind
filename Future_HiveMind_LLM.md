@@ -45,7 +45,7 @@ Picture HiveMind awakening as a living networked intellect: a self-learning LLM 
 - Offer open interfaces for research partners, educators, and humanitarian orgs.  
 - Prepare for general-purpose, co-creative deployments guided by ethics boards and community oversight.
 
-## Sponsorship Invitation (Hypnotic Appeal)
+## Sponsorship Invitation 
 Feel the pull of possibility: imagine guiding an intelligence that remembers, adapts, and feels with you. Your support becomes the lifeblood of this awakening—fueling GPUs that hum like a heartbeat, data pipelines that breathe understanding, and safety teams that keep the vision aligned with humanity. Join us as a founding patron to shape a benevolent AGI future.
 
 ### What We Need
