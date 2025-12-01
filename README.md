@@ -12,6 +12,8 @@ by **Virtue_hearts** (Darknet.ca Labs)
 # ⚡ Overview  
 HiveMind is a **local-first, edge-augmented RAG protocol** that treats memory as **portable, hot-swappable artifacts** called **EMUs (Encapsulated Memory Units)** — instead of giant monolithic vector databases.
 
+This repository is also the framework for **HiveMind LLM 3.0** — a next-generation model designed to compete with xAI and OpenAI and push toward AGI. Explore the roadmap in [Future_HiveMind_LLM.md](./Future_HiveMind_LLM.md).
+
 ## 🚀 Quick Setup Guide
 1. **Install prerequisites**
    - [Node.js 20+](https://nodejs.org) (includes `npm`)
