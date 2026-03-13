@@ -64,6 +64,10 @@ interface MemoryLayerOptions {
 
 type MetadataOverride = MemoryBlockUpdatePayload & { updatedAt?: string };
 
+interface LanceDBModule {
+  connect: (uri: string) => Promise<any>;
+}
+
 export class EmuMemoryLayer {
   private storePath: string;
   private emuBasePath: string;
@@ -73,6 +77,9 @@ export class EmuMemoryLayer {
   private index: MemoryIndex = { byIntent: {}, byTag: {} };
   private hiddenBlockIds = new Set<string>();
   private metadataOverrides: Record<string, MetadataOverride> = {};
+  private embeddingPipeline: Promise<any> | null = null;
+  private lanceModule: Promise<LanceDBModule> | null = null;
+  private activeConnections = new Map<string, any>();
 
   constructor(options?: MemoryLayerOptions) {
     this.storePath =
@@ -87,7 +94,8 @@ export class EmuMemoryLayer {
     return [...this.emuMounts].sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  refreshEmuMounts() {
+  async refreshEmuMounts() {
+    this.activeConnections.clear();
     this.loadEmuMounts();
     this.rebuildIndex();
   }
@@ -193,6 +201,41 @@ export class EmuMemoryLayer {
     };
   }
 
+  private async getEmbeddingPipeline() {
+    if (!this.embeddingPipeline) {
+      this.embeddingPipeline = import('@xenova/transformers').then(({ pipeline }) =>
+        pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2')
+      );
+    }
+    return this.embeddingPipeline;
+  }
+
+  private async loadLance(): Promise<LanceDBModule> {
+    if (!this.lanceModule) {
+      this.lanceModule = import('@lancedb/lancedb') as unknown as Promise<LanceDBModule>;
+    }
+    return this.lanceModule;
+  }
+
+  private async getEmuConnection(emuId: string, emuPath: string) {
+    if (this.activeConnections.has(emuId)) {
+      return this.activeConnections.get(emuId);
+    }
+
+    const lancePath = path.join(emuPath, 'lancedb');
+    if (!fs.existsSync(lancePath)) return null;
+
+    try {
+      const lance = await this.loadLance();
+      const db = await lance.connect(lancePath);
+      this.activeConnections.set(emuId, db);
+      return db;
+    } catch (error) {
+      console.warn(`Failed to connect to LanceDB for EMU ${emuId}`, error);
+      return null;
+    }
+  }
+
   addBlock(payload: NewMemoryBlockPayload): MemoryBlock {
     const content = payload.content.trim();
     if (!content) {
@@ -231,15 +274,60 @@ export class EmuMemoryLayer {
     return block;
   }
 
-  findRelevantBlocks(
+  async findRelevantBlocks(
     query: string,
     options?: { intents?: string[]; tags?: string[]; limit?: number }
-  ): MemoryBlock[] {
+  ): Promise<MemoryBlock[]> {
+    const limit = options?.limit || 4;
     const tokens = this.tokenize(query);
     const tagSet = new Set((options?.tags || []).map((tag) => tag.toLowerCase()));
     const intentSet = new Set((options?.intents || []).map((intent) => intent.toLowerCase()));
 
-    const scored = this.getAllBlocks()
+    let vectorResults: MemoryBlock[] = [];
+
+    try {
+      const embeddingPipeline = await this.getEmbeddingPipeline();
+      const output = await embeddingPipeline(query, { pooling: 'mean', normalize: true });
+      const vector = Array.from(output.data as number[]);
+
+      const emuSearches = this.emuMounts.map(async (mount) => {
+        const db = await this.getEmuConnection(mount.id, mount.path);
+        if (!db) return [];
+
+        try {
+          const table = await db.openTable('chunks');
+          const results = await table.search(vector).limit(limit).execute();
+
+          return results.map((row: any) => ({
+            id: row.id,
+            title: mount.name,
+            content: row.text,
+            intent: 'memory',
+            tags: mount.tags,
+            source: `emu:${mount.id}`,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            summary: row.text.slice(0, 140),
+            score: 1 - (row._distance || 0),
+            size: Buffer.byteLength(row.text, 'utf-8')
+          } as MemoryBlock));
+        } catch (err) {
+          console.warn(`Vector search failed for EMU ${mount.id}`, err);
+          return [];
+        }
+      });
+
+      const emuBlocks = await Promise.all(emuSearches);
+      vectorResults = emuBlocks.flat();
+    } catch (error) {
+      console.error('Vector search initialization failed, falling back to keyword search', error);
+    }
+
+    const allBlocks = [...this.userBlocks, ...this.emuBlocks]
+      .filter((block) => !this.hiddenBlockIds.has(block.id))
+      .map((block) => this.applyOverrides(block));
+
+    const scored = allBlocks
       .map((block) => {
         const blockTags = block.tags.map((tag) => tag.toLowerCase());
         const tagMatches = blockTags.filter((tag) => tokens.has(tag) || tagSet.has(tag)).length;
@@ -250,12 +338,23 @@ export class EmuMemoryLayer {
 
         return { block, score };
       })
-      .filter((entry) => entry.score > 0)
+      .filter((entry) => entry.score > 0);
+
+    const combined = [...vectorResults.map(b => ({ block: b, score: b.score * 2 })), ...scored]
       .sort((a, b) => b.score - a.score)
-      .slice(0, options?.limit || 4)
       .map((entry) => entry.block);
 
-    return scored;
+    const seenIds = new Set();
+    const unique = [];
+    for (const b of combined) {
+      if (!seenIds.has(b.id)) {
+        seenIds.add(b.id);
+        unique.push(b);
+      }
+      if (unique.length >= limit) break;
+    }
+
+    return unique;
   }
 
   exportEmuArchive(id: string): { filename: string; buffer: Buffer } {
@@ -278,7 +377,7 @@ export class EmuMemoryLayer {
     return { filename: `${folderName}.zip`, buffer: zip.toBuffer() };
   }
 
-  importEmuArchive(buffer: Buffer, originalName?: string): EmuMount {
+  async importEmuArchive(buffer: Buffer, originalName?: string): Promise<EmuMount> {
     const zip = new AdmZip(buffer);
     const entries = zip.getEntries();
 
@@ -330,7 +429,7 @@ export class EmuMemoryLayer {
       fs.writeFileSync(destPath, entry.getData());
     }
 
-    this.refreshEmuMounts();
+    await this.refreshEmuMounts();
     const folderId = targetFolder.replace(/\.emu$/, '');
     const mounted =
       this.emuMounts.find((mount) => mount.id === folderId) ||

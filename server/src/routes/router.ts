@@ -511,8 +511,12 @@ router.post('/emus/upload', emuUpload.single('file'), (req, res) => {
   }
 
   try {
-    const mount = memoryLayer.importEmuArchive(file.buffer, file.originalname);
-    res.json(mount);
+    memoryLayer.importEmuArchive(file.buffer, file.originalname).then((mount) => {
+      res.json(mount);
+    }).catch((error) => {
+      console.error('Failed to ingest EMU archive', error);
+      res.status(400).json({ error: 'Unable to import EMU archive' });
+    });
   } catch (error) {
     console.error('Failed to ingest EMU archive', error);
     res.status(400).json({ error: 'Unable to import EMU archive' });
@@ -560,7 +564,7 @@ router.post('/chat', async (req, res) => {
     }
 
     const searchQuery = body.transformedQuery || body.message;
-    const relevantBlocks = memoryLayer.findRelevantBlocks(searchQuery, {
+    const relevantBlocks = await memoryLayer.findRelevantBlocks(searchQuery, {
       intents: body.intent ? [body.intent] : undefined,
       tags: body.tags
     });
@@ -586,6 +590,45 @@ router.post('/chat', async (req, res) => {
   }
 });
 
+router.post('/query', async (req, res) => {
+  const body = req.body as {
+    message?: string;
+    sessionId?: string;
+    limit?: number;
+    tags?: string[];
+    intent?: string;
+  };
+
+  if (!body?.message) {
+    return res.status(400).json({ error: 'Message (query) is required' });
+  }
+
+  try {
+    const limit = Math.max(1, Math.min(20, Number(body.limit) || 4));
+    const blocks = await memoryLayer.findRelevantBlocks(body.message, {
+      intents: body.intent ? [body.intent] : undefined,
+      tags: body.tags,
+      limit
+    });
+
+    res.json({
+      query: body.message,
+      sessionId: body.sessionId || 'anonymous',
+      blocks: blocks.map((b) => ({
+        id: b.id,
+        title: b.title,
+        content: b.content,
+        source: b.source,
+        score: b.score,
+        tags: b.tags
+      }))
+    });
+  } catch (error) {
+    console.error('Query error', error);
+    res.status(500).json({ error: 'Failed to perform memory query' });
+  }
+});
+
 router.post('/chat/remote', async (req, res) => {
   const body = req.body as RouterRequestBody & {
     transformedQuery?: string;
@@ -600,7 +643,7 @@ router.post('/chat/remote', async (req, res) => {
   const sessionId = body.sessionId || 'default';
 
   const searchQuery = body.transformedQuery || body.message;
-  const relevantBlocks = memoryLayer.findRelevantBlocks(searchQuery, {
+  const relevantBlocks = await memoryLayer.findRelevantBlocks(searchQuery, {
     intents: body.intent ? [body.intent] : undefined,
     tags: body.tags
   });
